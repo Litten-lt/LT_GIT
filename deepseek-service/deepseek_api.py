@@ -10,12 +10,14 @@ DeepSeek FastAPI 服务 - 完整版
 
 用法：
   POST /chat/         - 聊天（Header 传 X-Session-ID 保持上下文）
-  GET  /health         - 健康检查
-  POST /chat/reset/    - 重置会话历史
+  GET  /health        - 健康检查
+  POST /chat/reset/   - 重置会话历史
   GET  /              - 服务信息
 """
 
 import os
+import json
+from pathlib import Path
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 import httpx
@@ -24,7 +26,6 @@ import sys
 import time
 import asyncio
 import uuid
-from datetime import datetime
 from collections import defaultdict
 
 app = FastAPI()
@@ -32,15 +33,36 @@ app = FastAPI()
 class Message(BaseModel):
     content: str
 
-# ========== 配置区 ==========
-AI_URL = "https://api.deepseek.com/v1/chat/completions"
-AI_API = os.getenv("DEEPSEEK_API_KEY", "")
-MODEL = "deepseek-chat"
-MAX_RETRIES = 3          # 最大重试次数
-TIMEOUT = 60.0           # HTTP 请求超时（秒）
-MAX_CONCURRENT = 3        # 最大同时并发请求数
-MAX_HISTORY = 20          # 每个会话最多保留多少条历史消息
-# ============================
+# ============================================================
+# 配置加载
+# ============================================================
+
+def load_config() -> dict:
+    """从 config.json 读取配置，不存在则报错退出"""
+    config_path = Path(__file__).parent / "config.json"
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"配置文件不存在：{config_path}\n"
+            f"请复制 config.example.json 为 config.json，并填入 api_key"
+        )
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    missing = [k for k in ("api_key", "api_url") if not cfg.get(k)]
+    if missing:
+        raise ValueError(f"config.json 缺少必要配置：{missing}，请填写后再启动")
+
+    return cfg
+
+cfg = load_config()
+
+AI_URL          = cfg["api_url"]
+AI_API          = cfg["api_key"]
+MODEL           = cfg.get("model", "deepseek-chat")
+MAX_RETRIES     = cfg.get("max_retries", 3)
+TIMEOUT         = cfg.get("timeout", 60.0)
+MAX_CONCURRENT  = cfg.get("max_concurrent", 3)
+MAX_HISTORY      = cfg.get("max_history", 20)
 
 
 # ============================================================
@@ -50,6 +72,12 @@ MAX_HISTORY = 20          # 每个会话最多保留多少条历史消息
 logger = logging.getLogger(__name__)
 
 def setup_logging():
+    """
+    logging 模块三要素：
+      Logger（记录器）  - 你写 logger.info() 的那个
+      Handler（处理器） - 决定日志输出到哪（控制台/文件）
+      Formatter（格式器）- 决定每条日志长什么样
+    """
     logging.basicConfig(
         level=logging.INFO,
         format="[%(asctime)s] [%(levelname)s] %(message)s",
@@ -93,9 +121,6 @@ session_histories: dict = defaultdict(list)
 
 async def call_ai_api(session_id: str, user_input: str) -> str:
     global current_requests
-
-    if not AI_API:
-        return "Error: DEEPSEEK_API_KEY environment variable not set"
 
     headers = {
         "Authorization": f"Bearer {AI_API}",

@@ -8,19 +8,27 @@
 pip install -r requirements.txt
 ```
 
-## 配置 API Key
+## 配置
 
-**方式一：环境变量（推荐）**
+**1. 复制配置文件**
 ```bash
-# Linux/macOS
-export DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxx
-
-# Windows PowerShell
-$env:DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxxxxx"
+copy config.example.json config.json
 ```
 
-**方式二：直接修改代码**（不推荐，key 会泄露到版本历史）
-编辑 `deepseek_api.py`，找到 `AI_API` 那行填入你的 key。
+**2. 编辑 `config.json`**，填入你的 API Key：
+```json
+{
+    "api_key": "sk-xxxxxxxxxxxxxxxx",
+    "api_url": "https://api.deepseek.com/v1/chat/completions",
+    "model": "deepseek-chat",
+    "max_retries": 3,
+    "timeout": 60.0,
+    "max_concurrent": 3,
+    "max_history": 20
+}
+```
+
+> 注意：`config.json` 不要提交到版本控制（已加入 `.gitignore`）
 
 ## 启动服务
 
@@ -65,14 +73,14 @@ python test_deepseek.py
 python test_deepseek2.py
 ```
 
-## 配置参数
-
-在 `deepseek_api.py` 的配置区可以调整：
+## 配置参数说明
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `MODEL` | `deepseek-chat` | 模型名称 |
-| `MAX_RETRIES` | `3` | 最大重试次数 |
-| `TIMEOUT` | `60.0` | HTTP 超时（秒）|
-| `MAX_CONCURRENT` | `3` | 最大并发数 |
-| `MAX_HISTORY` | `20` | 每会话保留消息数 |
+| `api_key` | **必填** | DeepSeek API Key |
+| `api_url` | DeepSeek 默认地址 | API 端点 |
+| `model` | `deepseek-chat` | 模型名称 |
+| `max_retries` | `3` | 最大重试次数 |
+| `timeout` | `60.0` | HTTP 超时（秒）|
+| `max_concurrent` | `3` | 最大并发数 |
+| `max_history` | `20` | 每会话保留消息数 |
