@@ -88,6 +88,7 @@ function App() {
       <div className="my-4">
         <Board
           board={state.board}
+          currentPlayer={state.currentPlayer}
           lastMove={state.lastMove}
           winningLine={state.winningLine}
           onCellClick={handleMove}

@@ -9,6 +9,7 @@ const STAR_POINTS = [
 
 interface BoardProps {
   board: BoardType;
+  currentPlayer: 'black' | 'white';
   lastMove: [number, number] | null;
   winningLine: [number, number][] | null;
   onCellClick: (row: number, col: number) => void;
@@ -17,6 +18,7 @@ interface BoardProps {
 
 export const Board: React.FC<BoardProps> = ({
   board,
+  currentPlayer,
   lastMove,
   winningLine,
   onCellClick,
@@ -91,7 +93,7 @@ export const Board: React.FC<BoardProps> = ({
                   width: '60%',
                   height: '60%',
                   borderRadius: '50%',
-                  background: lastMove && board[lastMove[0]][lastMove[1]] === 'black'
+                  background: currentPlayer === 'black'
                     ? 'radial-gradient(circle at 30% 30%, #4a4a4a 0%, #1a1a1a 100%)'
                     : 'radial-gradient(circle at 30% 30%, #ffffff 0%, #d0d0d0 100%)',
                   opacity: 0.4,
