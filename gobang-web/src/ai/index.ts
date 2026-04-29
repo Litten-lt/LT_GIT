@@ -11,13 +11,14 @@ const SCORES = {
 
 const CENTER = Math.floor(BOARD_SIZE / 2);
 const CENTER_BONUS = 10;
+const MAX_SPOTS = 15;
 
 function getPositionBonus(row: number, col: number): number {
   const distFromCenter = Math.abs(row - CENTER) + Math.abs(col - CENTER);
   return Math.max(0, CENTER_BONUS - distFromCenter);
 }
 
-function evaluateLine(count: number, openEnds: number, _player: Player, _opponent: Player, _board: Board, _row: number, _col: number): number {
+function evaluateLine(count: number, openEnds: number): number {
   if (count >= 5) return SCORES.FIVE;
 
   let score = 0;
@@ -41,7 +42,6 @@ function evaluateLine(count: number, openEnds: number, _player: Player, _opponen
 
 function evaluateBoard(board: Board, player: Player): number {
   let score = 0;
-  const opponent: Player = player === 'black' ? 'white' : 'black';
 
   for (let row = 0; row < BOARD_SIZE; row++) {
     for (let col = 0; col < BOARD_SIZE; col++) {
@@ -60,14 +60,12 @@ function evaluateBoard(board: Board, player: Player): number {
 
       for (const [dx, dy] of directions) {
         const line: number[] = [0, 0, 0, 0, 0];
-        const positions: [number, number][] = [[row, col]];
 
         for (let dir = 1; dir <= 4; dir++) {
           const r = row + dx * dir;
           const c = col + dy * dir;
           if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
             line[dir] = board[r][c] === cell ? 1 : board[r][c] === null ? 0 : -1;
-            positions.push([r, c]);
           }
         }
 
@@ -76,19 +74,16 @@ function evaluateBoard(board: Board, player: Player): number {
           const c = col + dy * dir;
           if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
             line[4 + dir] = board[r][c] === cell ? 1 : board[r][c] === null ? 0 : -1;
-            positions.push([r, c]);
           }
         }
 
-const count = line.filter(l => l === 1).length;
-  const openEnds = line.filter(l => l === 0).length;
-
-  logger.debug(`评估 [${row},${col}] 方向 [${dx},${dy}]: count=${count}, openEnds=${openEnds}`);
+        const count = line.filter(l => l === 1).length;
+        const openEnds = line.filter(l => l === 0).length;
 
         if (cell === player) {
-          score += evaluateLine(count, openEnds, player, opponent, board, row, col);
+          score += evaluateLine(count, openEnds);
         } else {
-          score -= evaluateLine(count, openEnds, player, opponent, board, row, col) * 1.1;
+          score -= evaluateLine(count, openEnds) * 1.1;
         }
       }
     }
@@ -106,6 +101,8 @@ function getEmptySpots(board: Board): [number, number][] {
       if (board[row][col] !== null) {
         for (let dr = -2; dr <= 2; dr++) {
           for (let dc = -2; dc <= 2; dc++) {
+            if (spots.length >= MAX_SPOTS) break;
+
             const r = row + dr;
             const c = col + dc;
             const key = `${r},${c}`;
@@ -123,6 +120,8 @@ function getEmptySpots(board: Board): [number, number][] {
   if (spots.length === 0) {
     spots.push([CENTER, CENTER]);
   }
+
+  logger.debug(`AI 搜索区域: ${spots.length} 个位置`);
 
   return spots;
 }
@@ -203,6 +202,6 @@ function minimax(
 
 export const AI_DEPTHS = {
   easy: 2,
-  medium: 3,
-  hard: 4,
+  medium: 2,
+  hard: 3,
 };
