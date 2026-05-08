@@ -3,13 +3,14 @@
 ## 1. 项目背景
 - **市场需求**: 休闲棋类游戏需求稳定，五子棋规则简单易懂，适合各年龄段
 - **用户痛点**: 现有五子棋游戏多为单机版或需下载安装，缺乏可直接在浏览器游玩的体验
-- **目标**: 打造一款无需安装、支持AI对战的五子棋网页游戏
+- **目标**: 打造一款支持本地/AI/在线对战的五子棋网页游戏
 
 ## 2. 系统/方案概述
-- **技术栈**: React 18 + TypeScript + Vite + Tailwind CSS + Vitest
+- **前端**: React 18 + TypeScript + Vite + Tailwind CSS + Vitest
+- **后端**: Node.js + Socket.IO (在线对战服务器)
 - **架构模式**: useReducer 状态管理
-- **游戏模式**: 双人本地对战 / AI对战（Minimax + Alpha-Beta Pruning）
-- **部署方式**: 单页应用，可直接部署至任意静态托管平台
+- **游戏模式**: 本地双人 / AI对战 / 在线对战
+- **部署方式**: 单页应用 + Socket.IO 服务器
 
 ## 3. 核心问题拆解
 | 问题 | 描述 | 状态 |
@@ -17,24 +18,27 @@
 | Q1 | 棋盘绘制与落子交互 | ✅ 已完成 |
 | Q2 | 胜负判定（五子连珠检测） | ✅ 已完成 |
 | Q3 | AI搜索算法与评估函数 | ✅ 已完成 |
-| Q4 | 游戏状态管理（悔棋、历史回放） | ✅ 已完成 |
+| Q4 | 游戏状态管理（悔棋） | ✅ 已完成 |
 | Q5 | 响应式布局与动画效果 | ✅ 已完成 |
+| Q6 | 在线对战系统 | ✅ 已完成 |
 
 ## 4. 方案设计
 - **棋盘**: 15x15 CSS Grid 渲染 + 网格线 + 星位点
-- **AI**: Minimax + Alpha-Beta + 评分函数（活四/冲四/活三等权重）
+- **AI**: Minimax + Alpha-Beta + 评分函数
+- **在线**: Socket.IO 实时通信 + 内存房间管理
 - **UI**: 深色木纹主题风格，棋子渐变阴影动画
-- **状态**: useReducer 管理 board/currentPlayer/moveHistory
+- **状态**: useReducer 管理本地游戏，在线使用独立 hook
 
 ## 5. 关键实现
 1. **胜负判定**: 从最后落子位置向4方向搜索，统计连续棋子数≥5即胜
 2. **AI落子**: setTimeout延迟500ms模拟思考，难度通过搜索深度控制
-3. **悔棋**: moveHistory记录全部落子，撤销时弹出最后一步并恢复棋盘状态
+3. **悔棋**: moveHistory记录全部落子，撤销时恢复棋盘状态
+4. **在线对战**: 房间码邀请 + 实时落子同步 + 服务端验证
 
 ## 6. 测试与验证
 - ✅ 单元测试: AI评估函数、胜负判定逻辑、Reducer状态管理
 - ✅ 集成测试: 完整游戏流程（开局→落子→判定→结束）
-- ✅ 手动测试: 各难度AI对战、不同屏幕尺寸响应式
+- ✅ 手动测试: 本地/AI/在线各模式对战
 
 ## 7. 项目结果
 
@@ -45,7 +49,8 @@
 | M2 | 落子逻辑 + 胜负判定 | ✅ 已完成 |
 | M3 | AI算法实现 | ✅ 已完成 |
 | M4 | UI优化 + 动画 | ✅ 已完成 |
-| M5 | 测试 + 部署 | ✅ 已完成 |
+| M5 | 在线对战功能 | ✅ 已完成 |
+| M6 | 测试 + 文档 | ✅ 已完成 |
 
 ### 7.2 已实现功能清单
 
@@ -60,6 +65,7 @@
 #### 游戏模式
 - ✅ 双人模式（本地对战）
 - ✅ AI 模式（人机对战）
+- ✅ 在线对战（房间码邀请）
 
 #### AI 难度
 | 难度 | 搜索深度 | 说明 |
@@ -72,6 +78,14 @@
 - ✅ 重新开始
 - ✅ 悔棋（AI模式撤销两步）
 
+#### 在线功能
+- ✅ 创建房间（6位房间码）
+- ✅ 加入房间
+- ✅ 实时落子同步
+- ✅ 胜负/平局同步
+- ✅ 重新开始请求
+- ✅ 对手离开提示
+
 #### UI/UX
 - ✅ 深色木纹主题
 - ✅ 棋子渐变立体效果
@@ -79,6 +93,7 @@
 - ✅ 悬停预览棋子
 - ✅ 获胜五子高亮动画
 - ✅ 结果弹窗动画
+- ✅ 在线状态指示器
 
 #### 日志系统
 - ✅ 游戏事件记录
@@ -87,17 +102,18 @@
 
 ## 8. 问题与优化
 - **潜在问题**: AI搜索深度增加导致性能下降
-- **优化方向**: 置换表(Transposition Table)、启发式搜索剪枝、棋盘区域限制
+- **优化方向**: 置换表(Transposition Table)、启发式搜索剪枝
 
 ## 9. 技术指标
 
 | 指标 | 数值 |
 |------|------|
-| 构建大小 (JS) | ~154KB |
-| 构建大小 (CSS) | ~11KB |
+| 前端构建大小 (JS) | ~154KB |
+| 前端构建大小 (CSS) | ~11KB |
 | 首屏加载 (gzip) | ~50KB |
 | 棋盘尺寸 | 15x15 |
 | AI 搜索算法 | Minimax + Alpha-Beta |
+| 在线服务器 | Node.js + Socket.IO (端口 3001) |
 
 ## 10. 目录结构
 
@@ -105,30 +121,57 @@
 gobang-web/
 ├── src/
 │   ├── ai/index.ts           # AI 算法
-│   ├── components/          # React 组件
-│   │   ├── Board.tsx        # 棋盘
-│   │   ├── Piece.tsx        # 棋子
-│   │   ├── StatusBar.tsx   # 状态栏
-│   │   ├── ControlPanel.tsx # 控制面板
-│   │   └── ResultModal.tsx  # 结果弹窗
+│   ├── components/           # React 组件
+│   │   ├── Board.tsx         # 棋盘
+│   │   ├── Piece.tsx         # 棋子
+│   │   ├── StatusBar.tsx     # 状态栏
+│   │   ├── ControlPanel.tsx  # 控制面板
+│   │   ├── ResultModal.tsx   # 结果弹窗
+│   │   └── RoomUI.tsx       # 在线房间界面
 │   ├── hooks/
-│   │   └── useGameReducer.ts # 游戏状态管理
-│   ├── types/index.ts       # 类型定义
-│   ├── utils/logger.ts      # 日志系统
-│   ├── App.tsx
+│   │   ├── useGameReducer.ts # 本地游戏状态管理
+│   │   └── useOnlineGame.ts  # 在线游戏状态管理
+│   ├── types/index.ts        # 类型定义
+│   ├── utils/logger.ts        # 日志系统
+│   ├── App.tsx               # 主应用
 │   ├── main.tsx
 │   └── index.css
-├── tests/                   # 单元测试
+├── server/                    # 在线对战服务器
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── src/
+│       ├── index.ts          # 服务器入口
+│       ├── types.ts          # 类型定义
+│       └── RoomManager.ts    # 房间管理
+├── tests/                    # 单元测试
 │   ├── ai.test.ts
 │   └── reducer.test.ts
-├── docs/                    # 项目文档
+├── docs/                     # 项目文档
 │   ├── README.md
 │   ├── SPEC.md
+│   ├── ONLINE_SPEC.md
 │   └── TEST_REPORT.md
 └── 配置文件
 ```
 
+## 11. 启动方式
+
+### 本地游戏（前端）
+```bash
+cd gobang-web
+npm install
+npm run dev
+```
+
+### 在线对战（服务器）
+```bash
+cd gobang-web/server
+npm install
+npm run dev
+```
+
 ---
-*文档版本: v1.0.0*
+
+*文档版本: v1.2.0*
 *创建日期: 2026-04-28*
-*更新日期: 2026-04-28*
+*更新日期: 2026-05-08*

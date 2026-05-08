@@ -4,8 +4,6 @@ import { Board, Player } from '../types';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
-export type GameMode = 'local' | 'online';
-
 interface OnlineRoom {
   id: string;
   players: [string | null, string | null];

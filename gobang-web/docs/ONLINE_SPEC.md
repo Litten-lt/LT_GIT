@@ -31,13 +31,13 @@
 ### 2.1 核心功能
 | 功能 | 状态 |
 |------|------|
-| 创建房间 | 待开发 |
-| 通过房间码加入房间 | 待开发 |
-| 两人实时对战 | 待开发 |
-| 回合制交替落子 | 待开发 |
-| 胜负判定同步 | 待开发 |
-| 平局判定同步 | 待开发 |
-| 游戏结束后可重新开始 | 待开发 |
+| 创建房间 | ✅ 已完成 |
+| 通过房间码加入房间 | ✅ 已完成 |
+| 两人实时对战 | ✅ 已完成 |
+| 回合制交替落子 | ✅ 已完成 |
+| 胜负判定同步 | ✅ 已完成 |
+| 平局判定同步 | ✅ 已完成 |
+| 游戏结束后可重新开始 | ✅ 已完成 |
 
 ### 2.2 不在范围内
 - 断线重连
@@ -84,7 +84,7 @@
 
 | 事件名 | 载荷 | 说明 |
 |--------|------|------|
-| `room-created` | `{ roomId: string }` | 房间创建成功 |
+| `room-created` | `{ room: Room, playerIndex: 0 }` | 房间创建成功 |
 | `room-joined` | `{ room: Room, playerIndex: 0\|1 }` | 加入房间成功 |
 | `player-joined` | `{ room: Room }` | 其他玩家加入 |
 | `opponent-move` | `{ row: number, col: number, player: 'black'\|'white' }` | 对手落子 |
@@ -111,8 +111,6 @@ interface Room {
   winner: Player | 'draw' | null;
   winningLine: [number, number][] | null;
   createdAt: number;
-  blackSocketId: string | null;
-  whiteSocketId: string | null;
 }
 ```
 
@@ -179,21 +177,18 @@ gobang-web/
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── src/
-│       ├── index.ts           # 服务器入口
-│       ├── types.ts           # 共享类型
-│       ├── RoomManager.ts     # 房间管理
-│       ├── GameEngine.ts      # 游戏逻辑验证
-│       └── handlers.ts        # Socket事件处理
+│       ├── index.ts           # Socket.IO 服务器入口
+│       ├── types.ts           # 类型定义
+│       └── RoomManager.ts     # 房间管理
 ├── docs/
 │   ├── README.md              # 主文档
-│   └── ONLINE_SPEC.md         # 在线对战详细规格
+│   └── ONLINE_SPEC.md          # 在线对战详细规格
 └── src/
     ├── hooks/
-    │   └── useOnlineGame.ts   # 在线游戏hook
+    │   └── useOnlineGame.ts    # 在线游戏状态管理
     ├── components/
-    │   ├── RoomUI.tsx         # 房间界面
-    │   └── OnlineStatus.tsx   # 连接状态
-    └── App.tsx                # 集成在线模式
+    │   └── RoomUI.tsx          # 房间界面
+    └── App.tsx                 # 集成在线模式
 ```
 
 ---
