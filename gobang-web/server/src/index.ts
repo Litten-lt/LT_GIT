@@ -1,0 +1,138 @@
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { RoomManager } from './RoomManager';
+import { ClientToServerEvents, ServerToClientEvents, Room } from './types';
+
+const PORT = 3001;
+
+const app = express();
+const httpServer = createServer(app);
+
+const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
+  cors: {
+    origin: ['http://localhost:5173', 'http://localhost:3000'],
+    methods: ['GET', 'POST'],
+  },
+});
+
+const roomManager = new RoomManager();
+
+const socketToRoom = new Map<string, string>();
+
+io.on('connection', (socket) => {
+  console.log(`[Server] Client connected: ${socket.id}`);
+
+  socket.on('create-room', () => {
+    const room = roomManager.createRoom(socket.id);
+    socketToRoom.set(socket.id, room.id);
+    socket.join(room.id);
+    socket.emit('room-created', { room, playerIndex: 0 });
+    console.log(`[Server] Room created: ${room.id} by ${socket.id}`);
+  });
+
+  socket.on('join-room', ({ roomId }) => {
+    const result = roomManager.joinRoom(socket.id, roomId);
+
+    if ('error' in result) {
+      socket.emit('error', { message: result.error, code: result.error });
+      console.log(`[Server] Join room failed: ${result.error} for ${socket.id}`);
+      return;
+    }
+
+    socketToRoom.set(socket.id, roomId);
+    socket.join(roomId);
+
+    socket.emit('room-joined', {
+      room: result.room,
+      playerIndex: result.playerIndex,
+    });
+
+    socket.to(roomId).emit('player-joined', { room: result.room });
+
+    console.log(`[Server] ${socket.id} joined room ${roomId} as player ${result.playerIndex}`);
+  });
+
+  socket.on('leave-room', ({ roomId }) => {
+    handleLeaveRoom(socket, roomId);
+  });
+
+  socket.on('make-move', ({ roomId, row, col }) => {
+    const result = roomManager.makeMove(socket.id, roomId, row, col);
+
+    if (!result.success) {
+      socket.emit('error', { message: result.error, code: result.error });
+      return;
+    }
+
+    const expectedPlayer = roomManager.getPlayerIndex(roomId, socket.id) === 0 ? 'black' : 'white';
+    const opponentId = roomManager.getOpponentSocketId(roomId, socket.id);
+
+    io.to(roomId).emit('opponent-move', {
+      row,
+      col,
+      player: expectedPlayer,
+    });
+
+    if (result.room.state === 'ended') {
+      io.to(roomId).emit('game-over', {
+        winner: result.room.winner!,
+        winningLine: result.room.winningLine || undefined,
+      });
+    }
+
+    console.log(`[Server] Move: ${expectedPlayer} at [${row}, ${col}] in room ${roomId}`);
+  });
+
+  socket.on('restart-game', ({ roomId }) => {
+    const result = roomManager.restartGame(socket.id, roomId);
+
+    if (!result.success) {
+      socket.emit('error', { message: result.error, code: result.error });
+      return;
+    }
+
+    io.to(roomId).emit('restart-approved', { room: result.room });
+    console.log(`[Server] Game restarted in room ${roomId}`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`[Server] Client disconnected: ${socket.id}`);
+    const roomId = socketToRoom.get(socket.id);
+    if (roomId) {
+      handleLeaveRoom(socket, roomId);
+      socketToRoom.delete(socket.id);
+    }
+  });
+});
+
+function handleLeaveRoom(socket: any, roomId: string): void {
+  const opponentId = roomManager.getOpponentSocketId(roomId, socket.id);
+  roomManager.leaveRoom(socket.id, roomId);
+  socket.leave(roomId);
+  socketToRoom.delete(socket.id);
+
+  if (opponentId) {
+    socket.to(roomId).emit('opponent-left', {});
+  }
+
+  console.log(`[Server] ${socket.id} left room ${roomId}`);
+}
+
+setInterval(() => {
+  const removed = roomManager.cleanupInactiveRooms();
+  if (removed > 0) {
+    console.log(`[Server] Cleaned up ${removed} inactive rooms`);
+  }
+}, 5 * 60 * 1000);
+
+httpServer.listen(PORT, () => {
+  console.log(`
+╔═══════════════════════════════════════════════════════════╗
+║          Gobang Server Running on port ${PORT}             ║
+║                                                           ║
+║   Local:    http://localhost:${PORT}                        ║
+║   Socket.IO: Ready for connections                        ║
+╚═══════════════════════════════════════════════════════════╝
+  `);
+});
