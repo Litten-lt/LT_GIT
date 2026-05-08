@@ -12,11 +12,19 @@ import { useOnlineGame } from '../hooks/useOnlineGame';
 
 interface GobangGameProps {
   onBack: () => void;
+  initialOnlineRoom: string | null;
+  onNavigateToOnline: (roomId: string) => void;
+  onClearOnlineState: () => void;
 }
 
 type AppMode = 'local' | 'online';
 
-export const GobangGame: React.FC<GobangGameProps> = ({ onBack }) => {
+export const GobangGame: React.FC<GobangGameProps> = ({
+  onBack,
+  initialOnlineRoom,
+  onNavigateToOnline,
+  onClearOnlineState,
+}) => {
   const [appMode, setAppMode] = useState<AppMode>('local');
   const [state, dispatch] = useReducer(gameReducer, INITIAL_STATE);
 
@@ -32,7 +40,15 @@ export const GobangGame: React.FC<GobangGameProps> = ({ onBack }) => {
     makeMove: onlineMakeMove,
     restartGame,
     clearError,
+    reconnectToRoom,
+    connectionError,
   } = useOnlineGame();
+
+  useEffect(() => {
+    if (initialOnlineRoom && appMode === 'online') {
+      reconnectToRoom(initialOnlineRoom);
+    }
+  }, [initialOnlineRoom, appMode]);
 
   const handleLocalMove = useCallback((row: number, col: number) => {
     if (state.status === 'ended') return;
@@ -110,11 +126,35 @@ export const GobangGame: React.FC<GobangGameProps> = ({ onBack }) => {
 
   const handleOnlineLeave = useCallback(() => {
     leaveRoom();
-  }, [leaveRoom]);
+    onClearOnlineState();
+  }, [leaveRoom, onClearOnlineState]);
+
+  const handleCreateRoom = useCallback(() => {
+    createRoom();
+  }, [createRoom]);
+
+  const handleJoinRoom = useCallback((roomId: string) => {
+    joinRoom(roomId);
+  }, [joinRoom]);
 
   const isOnlineGame = currentRoom !== null;
   const isWaiting = currentRoom?.state === 'waiting';
   const isEnded = currentRoom?.state === 'ended';
+
+  useEffect(() => {
+    if (isOnlineGame && currentRoom) {
+      onNavigateToOnline(currentRoom.id);
+    }
+  }, [isOnlineGame, currentRoom, onNavigateToOnline]);
+
+  const handleAppModeChange = (mode: AppMode) => {
+    setAppMode(mode);
+    if (mode === 'local') {
+      onClearOnlineState();
+    }
+  };
+
+  const isRoomExpired = connectionError === 'room-not-found' || connectionError === 'room-closed';
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
@@ -135,7 +175,7 @@ export const GobangGame: React.FC<GobangGameProps> = ({ onBack }) => {
 
       <div className="flex gap-2 mb-4">
         <button
-          onClick={() => setAppMode('local')}
+          onClick={() => handleAppModeChange('local')}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             appMode === 'local'
               ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
@@ -145,7 +185,7 @@ export const GobangGame: React.FC<GobangGameProps> = ({ onBack }) => {
           本地对战
         </button>
         <button
-          onClick={() => setAppMode('online')}
+          onClick={() => handleAppModeChange('online')}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             appMode === 'online'
               ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
@@ -194,23 +234,40 @@ export const GobangGame: React.FC<GobangGameProps> = ({ onBack }) => {
         </>
       )}
 
-      {appMode === 'online' && !isOnlineGame && (
+      {appMode === 'online' && isRoomExpired && (
+        <div className="flex flex-col items-center justify-center p-8 bg-slate-800/50 rounded-xl border border-red-500/50">
+          <div className="text-4xl mb-4">⏰</div>
+          <h2 className="text-xl font-bold text-red-400 mb-2">房间已失效</h2>
+          <p className="text-slate-400 text-center max-w-xs mb-6">
+            该房间已过期或不存在，请创建新房间
+          </p>
+          <div className="mb-4">
+            <RoomUI
+              connectionStatus={onlineStatus}
+              onCreateRoom={handleCreateRoom}
+              onJoinRoom={handleJoinRoom}
+            />
+          </div>
+        </div>
+      )}
+
+      {appMode === 'online' && !isRoomExpired && !isOnlineGame && (
         <div className="mb-4">
           <RoomUI
             connectionStatus={onlineStatus}
-            onCreateRoom={createRoom}
-            onJoinRoom={joinRoom}
+            onCreateRoom={handleCreateRoom}
+            onJoinRoom={handleJoinRoom}
           />
         </div>
       )}
 
-      {appMode === 'online' && isOnlineGame && (
+      {appMode === 'online' && !isRoomExpired && isOnlineGame && (
         <>
           <div className="mb-4">
             <RoomUI
               connectionStatus={onlineStatus}
-              onCreateRoom={createRoom}
-              onJoinRoom={joinRoom}
+              onCreateRoom={handleCreateRoom}
+              onJoinRoom={handleJoinRoom}
               roomId={currentRoom.id}
               playerIndex={playerIndex}
               currentRoom={currentRoom}
@@ -256,7 +313,7 @@ export const GobangGame: React.FC<GobangGameProps> = ({ onBack }) => {
         </>
       )}
 
-      {onlineError && (
+      {onlineError && !connectionError && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-red-900/90 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-4">
           <span>{onlineError}</span>
           <button

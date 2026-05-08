@@ -22,12 +22,14 @@ interface UseOnlineGameReturn {
   playerIndex: 0 | 1 | null;
   isMyTurn: boolean;
   error: string | null;
+  connectionError: string | null;
   createRoom: () => void;
   joinRoom: (roomId: string) => void;
   leaveRoom: () => void;
   makeMove: (row: number, col: number) => void;
   restartGame: () => void;
   clearError: () => void;
+  reconnectToRoom: (roomId: string) => void;
 }
 
 const SERVER_URL = 'http://localhost:3001';
@@ -38,6 +40,7 @@ export function useOnlineGame(): UseOnlineGameReturn {
   const [currentRoom, setCurrentRoom] = useState<OnlineRoom | null>(null);
   const [playerIndex, setPlayerIndex] = useState<0 | 1 | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const currentRoomIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -49,13 +52,12 @@ export function useOnlineGame(): UseOnlineGameReturn {
     socket.on('connect', () => {
       console.log('[Client] Connected to server');
       setStatus('connected');
+      setConnectionError(null);
     });
 
     socket.on('disconnect', () => {
       console.log('[Client] Disconnected from server');
       setStatus('disconnected');
-      setCurrentRoom(null);
-      setPlayerIndex(null);
     });
 
     socket.on('connect_error', () => {
@@ -68,6 +70,7 @@ export function useOnlineGame(): UseOnlineGameReturn {
       setPlayerIndex(idx);
       currentRoomIdRef.current = room.id;
       setError(null);
+      setConnectionError(null);
     });
 
     socket.on('room-joined', ({ room, playerIndex: idx }) => {
@@ -75,6 +78,7 @@ export function useOnlineGame(): UseOnlineGameReturn {
       setPlayerIndex(idx);
       currentRoomIdRef.current = room.id;
       setError(null);
+      setConnectionError(null);
     });
 
     socket.on('player-joined', ({ room }) => {
@@ -133,7 +137,15 @@ export function useOnlineGame(): UseOnlineGameReturn {
 
     socket.on('error', ({ message, code }) => {
       console.log('[Client] Error:', message, code);
-      setError(message);
+      if (code === 'room-not-found') {
+        setConnectionError('room-not-found');
+        setError(null);
+      } else if (code === 'room-full') {
+        setConnectionError('room-full');
+        setError(null);
+      } else {
+        setError(message);
+      }
     });
 
     socket.on('room-state', ({ room }) => {
@@ -156,6 +168,16 @@ export function useOnlineGame(): UseOnlineGameReturn {
 
   const joinRoom = useCallback((roomId: string) => {
     if (socketRef.current?.connected) {
+      setConnectionError(null);
+      socketRef.current.emit('join-room', { roomId });
+    } else {
+      setError('未连接到服务器');
+    }
+  }, []);
+
+  const reconnectToRoom = useCallback((roomId: string) => {
+    if (socketRef.current?.connected) {
+      setConnectionError(null);
       socketRef.current.emit('join-room', { roomId });
     } else {
       setError('未连接到服务器');
@@ -169,6 +191,7 @@ export function useOnlineGame(): UseOnlineGameReturn {
     currentRoomIdRef.current = null;
     setCurrentRoom(null);
     setPlayerIndex(null);
+    setConnectionError(null);
   }, []);
 
   const makeMove = useCallback((row: number, col: number) => {
@@ -199,11 +222,13 @@ export function useOnlineGame(): UseOnlineGameReturn {
     playerIndex,
     isMyTurn,
     error,
+    connectionError,
     createRoom,
     joinRoom,
     leaveRoom,
     makeMove,
     restartGame,
     clearError,
+    reconnectToRoom,
   };
 }
