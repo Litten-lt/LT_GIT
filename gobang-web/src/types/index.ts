@@ -43,9 +43,3 @@ export const INITIAL_STATE: GameState = {
   lastMove: null,
   winningLine: null,
 };
-
-export function createEmptyBoard(): Board {
-  return Array(BOARD_SIZE)
-    .fill(null)
-    .map(() => Array(BOARD_SIZE).fill(null));
-}

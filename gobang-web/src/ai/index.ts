@@ -202,6 +202,6 @@ function minimax(
 
 export const AI_DEPTHS = {
   easy: 2,
-  medium: 2,
-  hard: 3,
+  medium: 3,
+  hard: 4,
 };

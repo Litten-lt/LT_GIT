@@ -163,7 +163,7 @@ describe('Win Detection', () => {
   });
 
   describe('Draw detection', () => {
-    it('should detect board is full', () => {
+    it('should detect board is not full when empty', () => {
       const board = createEmptyBoard();
       let isFull = true;
 
@@ -177,6 +177,18 @@ describe('Win Detection', () => {
         if (!isFull) break;
       }
 
+      expect(isFull).toBe(false);
+    });
+
+    it('should detect board is full when all cells filled', () => {
+      const board = createEmptyBoard();
+      for (let row = 0; row < 15; row++) {
+        for (let col = 0; col < 15; col++) {
+          board[row][col] = 'black';
+        }
+      }
+
+      const isFull = board.every(row => row.every(cell => cell !== null));
       expect(isFull).toBe(true);
     });
   });
