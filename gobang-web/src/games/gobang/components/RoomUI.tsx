@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ConnectionStatus } from '../hooks/useOnlineGame';
+import { ConnectionStatus } from '../../../hooks/useOnlineGame';
 
 interface OnlineRoom {
   id: string;

@@ -1,4 +1,4 @@
-import { GAME_LIST, GameInfo } from '../types/game';
+import { GAME_LIST, BaseGameInfo } from '../types/game';
 
 interface LobbyProps {
   onSelectGame: (gameId: string) => void;
@@ -25,7 +25,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onSelectGame }) => {
 };
 
 interface GameCardProps {
-  game: GameInfo;
+  game: BaseGameInfo;
   onSelect: (gameId: string) => void;
 }
 

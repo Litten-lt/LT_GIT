@@ -1,4 +1,4 @@
-import { Player, GameMode, GameStatus } from '../types';
+import { Player, GameMode, GameStatus } from '../../../types';
 
 interface StatusBarProps {
   currentPlayer: Player;

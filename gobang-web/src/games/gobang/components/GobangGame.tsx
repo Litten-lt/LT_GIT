@@ -1,14 +1,15 @@
 import { useReducer, useEffect, useCallback, useState } from 'react';
-import { INITIAL_STATE } from '../types';
-import { gameReducer } from '../hooks/useGameReducer';
-import { Board } from './Board';
+import { Player } from '../../../types';
+import { createGobangReducer } from '../hooks/useGobangReducer';
 import { StatusBar } from './StatusBar';
 import { ControlPanel } from './ControlPanel';
 import { ResultModal } from './ResultModal';
 import { RoomUI } from './RoomUI';
-import { findBestMove, AI_DEPTHS } from '../ai';
-import { logger } from '../utils/logger';
-import { useOnlineGame } from '../hooks/useOnlineGame';
+import { Board as BoardComponent } from './Board';
+import { findBestMove } from '../ai';
+import { logger } from '../../../utils/logger';
+import { useOnlineGame } from '../../../hooks/useOnlineGame';
+import { BOARD_SIZE } from '../types';
 
 interface GobangGameProps {
   onBack: () => void;
@@ -19,6 +20,32 @@ interface GobangGameProps {
 
 type AppMode = 'local' | 'online';
 
+type GameBoard = (Player | null)[][];
+
+interface LocalGameState {
+  board: GameBoard;
+  currentPlayer: Player;
+  status: 'playing' | 'ended';
+  winner: Player | 'draw' | null;
+  moveHistory: [number, number][];
+  lastMove: [number, number] | null;
+  winningLine: [number, number][] | null;
+}
+
+const initialBoard: GameBoard = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+
+const INITIAL_STATE: LocalGameState = {
+  board: initialBoard,
+  currentPlayer: 'black',
+  status: 'playing',
+  winner: null,
+  moveHistory: [],
+  lastMove: null,
+  winningLine: null,
+};
+
+const gameReducer = createGobangReducer();
+
 export const GobangGame: React.FC<GobangGameProps> = ({
   onBack,
   initialOnlineRoom,
@@ -26,6 +53,8 @@ export const GobangGame: React.FC<GobangGameProps> = ({
   onClearOnlineState,
 }) => {
   const [appMode, setAppMode] = useState<AppMode>('local');
+  const [gameMode, setGameMode] = useState<'pvp' | 'ai'>('pvp');
+  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [state, dispatch] = useReducer(gameReducer, INITIAL_STATE);
 
   const {
@@ -53,11 +82,11 @@ export const GobangGame: React.FC<GobangGameProps> = ({
   const handleLocalMove = useCallback((row: number, col: number) => {
     if (state.status === 'ended') return;
     if (state.board[row][col] !== null) return;
-    if (state.gameMode === 'ai' && state.currentPlayer === 'white') return;
+    if (gameMode === 'ai' && state.currentPlayer === 'white') return;
 
     logger.move(state.currentPlayer, row, col);
     dispatch({ type: 'MOVE', row, col });
-  }, [state.status, state.board, state.currentPlayer, state.gameMode]);
+  }, [state.status, state.board, state.currentPlayer, gameMode]);
 
   const handleUndo = useCallback(() => {
     logger.info('用户执行悔棋');
@@ -71,21 +100,24 @@ export const GobangGame: React.FC<GobangGameProps> = ({
 
   const handleModeChange = useCallback((mode: 'pvp' | 'ai') => {
     logger.info(`切换模式: ${mode === 'pvp' ? '双人' : 'AI'}`);
-    dispatch({ type: 'SET_MODE', mode });
+    setGameMode(mode);
+    dispatch({ type: 'RESTART' });
   }, []);
 
-  const handleDifficultyChange = useCallback((difficulty: 'easy' | 'medium' | 'hard') => {
+  const handleDifficultyChange = useCallback((diff: 'easy' | 'medium' | 'hard') => {
     const names = { easy: '简单', medium: '中等', hard: '困难' };
-    logger.info(`切换难度: ${names[difficulty]}`);
-    dispatch({ type: 'SET_DIFFICULTY', difficulty });
+    logger.info(`切换难度: ${names[diff]}`);
+    setDifficulty(diff);
   }, []);
+
+  const AI_DEPTHS = { easy: 2, medium: 3, hard: 4 };
 
   useEffect(() => {
-    if (state.gameMode !== 'ai') return;
+    if (gameMode !== 'ai') return;
     if (state.status === 'ended') return;
     if (state.currentPlayer !== 'white') return;
 
-    const depth = AI_DEPTHS[state.difficulty];
+    const depth = AI_DEPTHS[difficulty];
     logger.aiThink(depth);
 
     const timeoutId = setTimeout(() => {
@@ -95,7 +127,7 @@ export const GobangGame: React.FC<GobangGameProps> = ({
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [state.board, state.currentPlayer, state.gameMode, state.status, state.difficulty]);
+  }, [state.board, state.currentPlayer, gameMode, state.status, difficulty]);
 
   useEffect(() => {
     if (state.status === 'ended' && state.winner) {
@@ -107,7 +139,7 @@ export const GobangGame: React.FC<GobangGameProps> = ({
     logger.gameStart();
   }, []);
 
-  const canUndo = state.gameMode === 'pvp'
+  const canUndo = gameMode === 'pvp'
     ? state.moveHistory.length > 0
     : state.moveHistory.length >= 2;
 
@@ -200,25 +232,25 @@ export const GobangGame: React.FC<GobangGameProps> = ({
         <>
           <StatusBar
             currentPlayer={state.currentPlayer}
-            gameMode={state.gameMode}
+            gameMode={gameMode}
             gameStatus={state.status}
             winner={state.winner}
           />
 
           <div className="my-4">
-            <Board
+            <BoardComponent
               board={state.board}
               currentPlayer={state.currentPlayer}
               lastMove={state.lastMove}
               winningLine={state.winningLine}
               onCellClick={handleLocalMove}
-              disabled={state.status === 'ended' || (state.gameMode === 'ai' && state.currentPlayer === 'white')}
+              disabled={state.status === 'ended' || (gameMode === 'ai' && state.currentPlayer === 'white')}
             />
           </div>
 
           <ControlPanel
-            gameMode={state.gameMode}
-            difficulty={state.difficulty}
+            gameMode={gameMode}
+            difficulty={difficulty}
             canUndo={canUndo}
             onRestart={handleLocalRestart}
             onUndo={handleUndo}
@@ -283,7 +315,7 @@ export const GobangGame: React.FC<GobangGameProps> = ({
           />
 
           <div className="my-4">
-            <Board
+            <BoardComponent
               board={currentRoom.board}
               currentPlayer={currentRoom.currentPlayer}
               lastMove={currentRoom.lastMove}

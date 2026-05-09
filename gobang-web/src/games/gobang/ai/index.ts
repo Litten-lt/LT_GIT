@@ -1,5 +1,5 @@
-import { Board, Player, BOARD_SIZE } from '../types';
-import { logger } from '../utils/logger';
+import { Board, Player, BOARD_SIZE } from '../../../types';
+import { logger } from '../../../utils/logger';
 
 const SCORES = {
   FIVE: 100000,

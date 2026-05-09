@@ -1,4 +1,4 @@
-import { Player, GameStatus } from '../types';
+import { Player, GameStatus } from '../../../types';
 
 interface ResultModalProps {
   winner: Player | 'draw' | null;

@@ -1,4 +1,4 @@
-import { Player } from '../types';
+import { Player } from '../../../types';
 
 interface PieceProps {
   player: Player;

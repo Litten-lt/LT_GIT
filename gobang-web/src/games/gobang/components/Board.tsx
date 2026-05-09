@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Board as BoardType } from '../types';
+import { Board as BoardType } from '../../../types';
 import { Piece } from './Piece';
-import { BOARD_SIZE } from '../types';
+import { BOARD_SIZE } from '../../../types';
 
 const STAR_POINTS = [
   [3, 3], [3, 11], [7, 7], [11, 3], [11, 11]

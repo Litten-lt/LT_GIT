@@ -1,4 +1,4 @@
-import { GameMode, Difficulty } from '../types';
+import { GameMode, Difficulty } from '../../../types';
 
 interface ControlPanelProps {
   gameMode: GameMode;

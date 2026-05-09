@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findBestMove, AI_DEPTHS } from '../src/ai';
+import { findBestMove, AI_DEPTHS } from '../src/games/gobang/ai';
 import { Board } from '../src/types';
 
 function createEmptyBoard(): Board {
