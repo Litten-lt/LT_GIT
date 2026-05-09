@@ -139,7 +139,19 @@ gobang-web/
 └── 配置文件
 ```
 
-## 11. 启动方式
+## 11. 部署信息
+
+| 项目 | 值 |
+|------|-----|
+| 域名 | https://chesshub.fun |
+| 服务器 | 腾讯云轻量应用服务器 (Ubuntu 22.04) |
+| 公网 IP | 159.75.97.172 |
+| 前端 | Nginx + HTTPS (Let's Encrypt) |
+| 后端 | Node.js + Socket.IO (PM2) |
+
+详细部署步骤见 [DEPLOY.md](./DEPLOY.md)
+
+## 12. 启动方式
 
 ### 游戏平台（前端）
 ```bash

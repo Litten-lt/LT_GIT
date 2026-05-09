@@ -32,7 +32,7 @@ interface UseOnlineGameReturn {
   reconnectToRoom: (roomId: string) => void;
 }
 
-const SERVER_URL = 'http://localhost:3001';
+const SERVER_URL = 'https://chesshub.fun';
 
 export function useOnlineGame(): UseOnlineGameReturn {
   const socketRef = useRef<Socket | null>(null);
