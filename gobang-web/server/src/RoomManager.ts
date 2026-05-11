@@ -1,159 +1,140 @@
-import {
-  Room,
-  createEmptyBoard,
-  generateRoomId,
-  checkWin,
-  isBoardFull,
-  isValidMove,
-} from './types';
+import { BaseRoom, GameHandler, generateRoomId } from './types';
 
 export class RoomManager {
-  private rooms: Map<string, Room> = new Map();
+  private rooms: Map<string, BaseRoom> = new Map();
+  private gameHandlers: Map<string, GameHandler> = new Map();
 
-  createRoom(socketId: string): Room {
+  registerGame(handler: GameHandler): void {
+    this.gameHandlers.set(handler.gameId, handler);
+  }
+
+  getHandler(gameId: string): GameHandler | undefined {
+    return this.gameHandlers.get(gameId);
+  }
+
+  createRoom(socketId: string, gameId: string): BaseRoom | null {
+    const handler = this.gameHandlers.get(gameId);
+    if (!handler) {
+      console.log(`[RoomManager] No handler for game: ${gameId}`);
+      return null;
+    }
+
     let roomId = generateRoomId();
     while (this.rooms.has(roomId)) {
       roomId = generateRoomId();
     }
 
-    const room: Room = {
-      id: roomId,
-      players: [socketId, null],
-      state: 'waiting',
-      board: createEmptyBoard(),
-      currentPlayer: 'black',
-      moveHistory: [],
-      winner: null,
-      winningLine: null,
-      createdAt: Date.now(),
-    };
-
+    const room = handler.createRoom(socketId);
     this.rooms.set(roomId, room);
+
+    console.log(`[RoomManager] Room created: ${roomId} for ${gameId} by ${socketId}`);
     return room;
   }
 
-  joinRoom(socketId: string, roomId: string): { room: Room; playerIndex: 0 | 1 } | { error: string } {
+  joinRoom(socketId: string, roomId: string, gameId: string): { room: BaseRoom; playerIndex: number } | { error: string } {
     const room = this.rooms.get(roomId);
     if (!room) {
       return { error: 'room-not-found' };
     }
 
-    if (room.players[1] !== null) {
-      return { error: 'room-full' };
+    if (room.gameId !== gameId) {
+      return { error: 'room-not-found' };
     }
 
-    if (room.players[0] === socketId) {
-      return { room, playerIndex: 0 };
+    const handler = this.gameHandlers.get(gameId);
+    if (!handler) {
+      return { error: 'game-not-supported' };
     }
 
-    room.players[1] = socketId;
-    room.state = 'playing';
+    const result = handler.joinRoom(socketId, roomId, this.rooms);
+    if (!result.success || !result.room) {
+      return { error: result.error || 'join-failed' };
+    }
 
-    return { room, playerIndex: 1 };
+    this.rooms.set(roomId, result.room);
+    return { room: result.room, playerIndex: result.playerIndex! };
   }
 
   leaveRoom(socketId: string, roomId: string): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
-    if (room.players[0] === socketId) {
-      room.players[0] = null;
-    } else if (room.players[1] === socketId) {
-      room.players[1] = null;
+    const handler = this.gameHandlers.get(room.gameId);
+    if (!handler) return;
+
+    const playerIndex = room.players.findIndex(p => p === socketId);
+    if (playerIndex !== -1) {
+      room.players[playerIndex] = null;
     }
 
-    if (room.players[0] === null && room.players[1] === null) {
+    if (room.players.every(p => p === null)) {
       this.rooms.delete(roomId);
-    }
-  }
-
-  makeMove(
-    socketId: string,
-    roomId: string,
-    row: number,
-    col: number
-  ): { success: true; room: Room } | { success: false; error: string } {
-    const room = this.rooms.get(roomId);
-    if (!room) {
-      return { success: false, error: 'room-not-found' };
-    }
-
-    if (room.state === 'ended') {
-      return { success: false, error: 'game-ended' };
-    }
-
-    const playerIndex = room.players[0] === socketId ? 0 : room.players[1] === socketId ? 1 : -1;
-    if (playerIndex === -1) {
-      return { success: false, error: 'not-in-room' };
-    }
-
-    const expectedPlayer: 'black' | 'white' = playerIndex === 0 ? 'black' : 'white';
-    if (room.currentPlayer !== expectedPlayer) {
-      return { success: false, error: 'not-your-turn' };
-    }
-
-    if (!isValidMove(room.board, row, col)) {
-      return { success: false, error: 'cell-occupied' };
-    }
-
-    room.board[row][col] = expectedPlayer;
-    room.moveHistory.push([row, col]);
-
-    const winningLine = checkWin(room.board, row, col, expectedPlayer);
-    if (winningLine) {
-      room.state = 'ended';
-      room.winner = expectedPlayer;
-      room.winningLine = winningLine;
-    } else if (isBoardFull(room.board)) {
-      room.state = 'ended';
-      room.winner = 'draw';
-      room.winningLine = null;
+      console.log(`[RoomManager] Room deleted: ${roomId}`);
     } else {
-      room.currentPlayer = expectedPlayer === 'black' ? 'white' : 'black';
+      this.rooms.set(roomId, room);
     }
-
-    return { success: true, room };
   }
 
-  restartGame(socketId: string, roomId: string): { success: true; room: Room } | { success: false; error: string } {
+  handleMove(socketId: string, roomId: string, move: any): { success: boolean; room?: BaseRoom; error?: string } {
     const room = this.rooms.get(roomId);
     if (!room) {
       return { success: false, error: 'room-not-found' };
     }
 
-    const playerIndex = room.players[0] === socketId ? 0 : room.players[1] === socketId ? 1 : -1;
-    if (playerIndex === -1) {
-      return { success: false, error: 'not-in-room' };
+    const handler = this.gameHandlers.get(room.gameId);
+    if (!handler) {
+      return { success: false, error: 'game-not-supported' };
     }
 
-    room.board = createEmptyBoard();
-    room.currentPlayer = 'black';
-    room.moveHistory = [];
-    room.winner = null;
-    room.winningLine = null;
-    room.state = room.players[0] !== null && room.players[1] !== null ? 'playing' : 'waiting';
+    const result = handler.handleMove(socketId, roomId, move, this.rooms);
+    if (result.success && result.room) {
+      this.rooms.set(roomId, result.room);
+    }
 
-    return { success: true, room };
+    return result;
   }
 
-  getRoom(roomId: string): Room | undefined {
+  restartGame(socketId: string, roomId: string): { success: boolean; room?: BaseRoom; error?: string } {
+    const room = this.rooms.get(roomId);
+    if (!room) {
+      return { success: false, error: 'room-not-found' };
+    }
+
+    const handler = this.gameHandlers.get(room.gameId);
+    if (!handler) {
+      return { success: false, error: 'game-not-supported' };
+    }
+
+    const result = handler.restartGame(socketId, roomId, this.rooms);
+    if (result.success && result.room) {
+      this.rooms.set(roomId, result.room);
+    }
+
+    return result;
+  }
+
+  getRoom(roomId: string): BaseRoom | undefined {
     return this.rooms.get(roomId);
   }
 
-  getPlayerIndex(roomId: string, socketId: string): 0 | 1 | null {
+  getPlayerIndex(roomId: string, socketId: string): number | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
-    if (room.players[0] === socketId) return 0;
-    if (room.players[1] === socketId) return 1;
-    return null;
+
+    const handler = this.gameHandlers.get(room.gameId);
+    if (!handler) return null;
+
+    return handler.getPlayerIndex(roomId, socketId, this.rooms);
   }
 
-  getOpponentSocketId(roomId: string, socketId: string): string | null {
+  getOpponentSocketIds(roomId: string, socketId: string): string[] {
     const room = this.rooms.get(roomId);
-    if (!room) return null;
-    if (room.players[0] === socketId) return room.players[1];
-    if (room.players[1] === socketId) return room.players[0];
-    return null;
+    if (!room) return [];
+
+    const handler = this.gameHandlers.get(room.gameId);
+    if (!handler) return [];
+
+    return handler.getOpponentSocketIds(roomId, socketId, this.rooms);
   }
 
   cleanupInactiveRooms(maxAgeMs: number = 30 * 60 * 1000): number {
