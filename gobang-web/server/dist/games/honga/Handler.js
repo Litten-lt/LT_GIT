@@ -1,16 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HongAHandler = void 0;
-const types_1 = require("../../types");
-const types_2 = require("./types");
+const types_1 = require("./types");
 function determineTeams(room) {
     const players = room.players.filter(p => p !== null);
     const spadeAHolder = players.find(pid => {
-        const hand = room.hands.get(pid);
+        const hand = room.hands[pid];
         return hand?.some(c => c.suit === 'diamond' && c.rank === 14);
     });
     const heartAHolder = players.find(pid => {
-        const hand = room.hands.get(pid);
+        const hand = room.hands[pid];
         return hand?.some(c => c.suit === 'heart' && c.rank === 14);
     });
     if (spadeAHolder && heartAHolder && spadeAHolder === heartAHolder) {
@@ -30,33 +29,123 @@ function findFirstPlayer(room) {
     const spade3Index = room.players.findIndex(pid => {
         if (!pid)
             return false;
-        const hand = room.hands.get(pid);
+        const hand = room.hands[pid];
         return hand?.some(c => c.suit === 'spade' && c.rank === 3);
     });
     return spade3Index !== -1 ? spade3Index : 0;
 }
+function getLeadingPlayerIndex(room) {
+    if (room.lastPlay) {
+        return room.lastPlay.playerIndex;
+    }
+    return room.roundStarter;
+}
+function advanceToNextPlayer(room) {
+    const players = room.players;
+    const current = room.currentPlayerIndex;
+    let next = (current + 1) % 4;
+    let count = 0;
+    while (players[next] === null && count < 4) {
+        next = (next + 1) % 4;
+        count++;
+    }
+    return next;
+}
+function canPlayType(lastType, newType) {
+    if (lastType === newType)
+        return true;
+    const bombs = ['bomb-4', 'bomb-5-10-k', 'bomb-4-pair', 'sky-bomb'];
+    return bombs.includes(newType);
+}
+function validatePlay(room, playerIndex, cards) {
+    const playerId = room.players[playerIndex];
+    if (!playerId)
+        return { valid: false, error: 'no-hand' };
+    const hand = room.hands[playerId];
+    if (!hand)
+        return { valid: false, error: 'no-hand' };
+    for (const card of cards) {
+        if (!hand.some(c => c.suit === card.suit && c.rank === card.rank)) {
+            return { valid: false, error: 'card-not-in-hand' };
+        }
+    }
+    const cardType = (0, types_1.getCardType)(cards);
+    if (!cardType) {
+        return { valid: false, error: 'invalid-card-type' };
+    }
+    if (room.roundStarter === playerIndex) {
+        return { valid: true };
+    }
+    if (room.lastPlay) {
+        const lastType = room.lastPlay.cardType;
+        if (!canPlayType(lastType, cardType)) {
+            return { valid: false, error: 'cannot-play-this-type' };
+        }
+        if (cardType !== 'sky-bomb' && !(0, types_1.canBeat)(room.lastPlay.cards, cards)) {
+            return { valid: false, error: 'cannot-beat-last-play' };
+        }
+    }
+    return { valid: true };
+}
+function removeCardsFromHand(hand, cardsToRemove) {
+    const remaining = [...hand];
+    for (const card of cardsToRemove) {
+        const idx = remaining.findIndex(c => c.suit === card.suit && c.rank === card.rank);
+        if (idx !== -1)
+            remaining.splice(idx, 1);
+    }
+    return remaining;
+}
+function calculateRoundWinner(room) {
+    if (!room.lastPlay)
+        return null;
+    let winnerIdx = room.lastPlay.playerIndex;
+    let maxCards = room.lastPlay.cards;
+    let maxScore = (0, types_1.getCardsScore)(maxCards);
+    const players = room.players;
+    const startedFrom = getLeadingPlayerIndex(room);
+    let idx = (startedFrom + 1) % 4;
+    while (idx !== startedFrom) {
+        if (players[idx] !== null) {
+            const playerId = players[idx];
+            const hand = room.hands[playerId];
+            if (hand) {
+                const lastCards = room.lastPlay.cards;
+                if ((0, types_1.canBeat)(lastCards, hand.length === 0 ? [] : [])) {
+                }
+            }
+        }
+        idx = (idx + 1) % 4;
+    }
+    return { winnerIndex: winnerIdx, points: maxScore };
+}
+function getPointsFromPlay(cards) {
+    return (0, types_1.getCardsScore)(cards);
+}
 exports.HongAHandler = {
-    gameId: types_2.HONGA_GAME_ID,
+    gameId: types_1.HONGA_GAME_ID,
     maxPlayers: 4,
     createRoom(socketId) {
-        const roomId = (0, types_1.generateRoomId)();
-        const deck = (0, types_2.shuffleDeck)((0, types_2.createDeck)());
-        const hands = new Map();
-        for (let i = 0; i < 4; i++) {
-            const playerId = `player_${i}`;
-            hands.set(playerId, deck.slice(i * 13, (i + 1) * 13));
-        }
+        const deck = (0, types_1.shuffleDeck)((0, types_1.createDeck)());
+        const hands = {
+            [socketId]: deck.slice(0, 13),
+        };
         const room = {
-            id: roomId,
-            gameId: types_2.HONGA_GAME_ID,
+            id: '',
+            gameId: types_1.HONGA_GAME_ID,
             players: [socketId, null, null, null],
             hands,
             currentPlayerIndex: -1,
             lastPlay: null,
+            currentRoundBest: null,
+            roundHistory: [],
             scores: { A: 0, B: 0 },
             teams: null,
             finishedPlayers: [],
             deck,
+            roundStarter: 0,
+            hostSocketId: socketId,
+            passCount: 0,
             state: 'waiting',
             createdAt: Date.now(),
         };
@@ -67,7 +156,7 @@ exports.HongAHandler = {
         if (!room) {
             return { success: false, error: 'room-not-found' };
         }
-        if (room.gameId !== types_2.HONGA_GAME_ID) {
+        if (room.gameId !== types_1.HONGA_GAME_ID) {
             return { success: false, error: 'room-not-found' };
         }
         const emptySlot = room.players.findIndex(p => p === null);
@@ -80,11 +169,37 @@ exports.HongAHandler = {
         }
         room.players[emptySlot] = socketId;
         if (room.players.every(p => p !== null)) {
-            room.state = 'playing';
-            room.teams = determineTeams(room);
-            room.currentPlayerIndex = findFirstPlayer(room);
+            room.state = 'ready';
         }
         return { success: true, room, playerIndex: emptySlot };
+    },
+    startGame(socketId, roomId, rooms) {
+        const room = rooms.get(roomId);
+        if (!room) {
+            return { success: false, error: 'room-not-found' };
+        }
+        if (room.state !== 'ready') {
+            return { success: false, error: 'game-not-ready' };
+        }
+        if (room.players[0] !== socketId) {
+            return { success: false, error: 'not-host' };
+        }
+        const hands = {};
+        for (let i = 0; i < 4; i++) {
+            const playerId = room.players[i];
+            if (playerId) {
+                hands[playerId] = room.deck.slice(i * 13, (i + 1) * 13);
+            }
+        }
+        room.hands = hands;
+        room.currentRoundBest = null;
+        room.roundHistory = [];
+        room.passCount = 0;
+        room.state = 'playing';
+        room.teams = determineTeams(room);
+        room.currentPlayerIndex = findFirstPlayer(room);
+        room.roundStarter = room.currentPlayerIndex;
+        return { success: true, room };
     },
     handleMove(socketId, roomId, move, rooms) {
         const room = rooms.get(roomId);
@@ -102,11 +217,107 @@ exports.HongAHandler = {
             return { success: false, error: 'not-your-turn' };
         }
         const cards = move.cards;
+        const validation = validatePlay(room, playerIndex, cards);
+        if (!validation.valid) {
+            return { success: false, error: validation.error };
+        }
+        const cardType = (0, types_1.getCardType)(cards);
+        if (!cardType)
+            return { success: false, error: 'invalid-card-type' };
+        const hand = room.hands[socketId];
+        if (!hand)
+            return { success: false, error: 'no-hand' };
         room.lastPlay = {
             playerIndex,
             cards,
-            cardType: 'single',
+            cardType,
         };
+        room.roundHistory.push({ ...room.lastPlay });
+        const previousBest = room.currentRoundBest;
+        const willBeNewBest = !previousBest || (0, types_1.canBeat)(cards, previousBest.cards);
+        if (willBeNewBest) {
+            room.currentRoundBest = room.lastPlay;
+        }
+        room.passCount = 0;
+        room.hands[socketId] = removeCardsFromHand(hand, cards);
+        if (room.hands[socketId]?.length === 0) {
+            room.finishedPlayers.push(socketId);
+            if (room.finishedPlayers.length === 3) {
+                const lastPlayer = room.players.find(p => p !== null && !room.finishedPlayers.includes(p));
+                if (lastPlayer) {
+                    const lastPlayerIndex = room.players.indexOf(lastPlayer);
+                    if (room.teams) {
+                        if (room.teams.mode === '2v2') {
+                            const isTeamA = room.teams.A.includes(socketId);
+                            room.scores[isTeamA ? 'A' : 'B'] += 2;
+                        }
+                        else {
+                            if (socketId === room.teams.solo) {
+                                room.scores.B += 3;
+                            }
+                            else {
+                                room.scores.A += 1;
+                            }
+                        }
+                    }
+                }
+                room.state = 'finished';
+                return { success: true, room };
+            }
+            const nextPlayer = advanceToNextPlayer(room);
+            room.roundStarter = playerIndex;
+            room.currentPlayerIndex = nextPlayer;
+            room.lastPlay = null;
+            room.currentRoundBest = null;
+            room.roundHistory = [];
+            room.passCount = 0;
+            return { success: true, room };
+        }
+        const nextPlayer = advanceToNextPlayer(room);
+        const isBomb = ['bomb-4', 'bomb-5-10-k', 'bomb-4-pair', 'sky-bomb'].includes(cardType);
+        let newRoundStarter;
+        if (isBomb && room.lastPlay) {
+            newRoundStarter = nextPlayer;
+        }
+        else {
+            newRoundStarter = playerIndex;
+        }
+        if (newRoundStarter !== room.roundStarter) {
+            room.roundStarter = newRoundStarter;
+        }
+        room.currentPlayerIndex = nextPlayer;
+        return { success: true, room };
+    },
+    handlePass(socketId, roomId, rooms) {
+        const room = rooms.get(roomId);
+        if (!room) {
+            return { success: false, error: 'room-not-found' };
+        }
+        if (room.state !== 'playing') {
+            return { success: false, error: 'game-not-started' };
+        }
+        const playerIndex = room.players.findIndex(p => p === socketId);
+        if (playerIndex === -1) {
+            return { success: false, error: 'not-in-room' };
+        }
+        if (room.currentPlayerIndex !== playerIndex) {
+            return { success: false, error: 'not-your-turn' };
+        }
+        if (!room.lastPlay) {
+            return { success: false, error: 'cannot-pass-first' };
+        }
+        room.passCount++;
+        const activePlayers = room.players.filter(p => p !== null).length;
+        if (room.passCount >= activePlayers - 1) {
+            room.currentRoundBest = null;
+            room.lastPlay = null;
+            room.roundHistory = [];
+            room.passCount = 0;
+            room.currentPlayerIndex = room.roundStarter;
+            return { success: true, room };
+        }
+        const nextPlayer = advanceToNextPlayer(room);
+        room.currentPlayerIndex = nextPlayer;
         return { success: true, room };
     },
     restartGame(socketId, roomId, rooms) {
@@ -118,12 +329,13 @@ exports.HongAHandler = {
         if (playerIndex === -1) {
             return { success: false, error: 'not-in-room' };
         }
-        const deck = (0, types_2.shuffleDeck)((0, types_2.createDeck)());
-        room.hands = new Map();
+        const deck = (0, types_1.shuffleDeck)((0, types_1.createDeck)());
+        const hands = {};
         for (let i = 0; i < 4; i++) {
             const playerId = room.players[i] || `player_${i}`;
-            room.hands.set(playerId, deck.slice(i * 13, (i + 1) * 13));
+            hands[playerId] = deck.slice(i * 13, (i + 1) * 13);
         }
+        room.hands = hands;
         room.currentPlayerIndex = -1;
         room.lastPlay = null;
         room.scores = { A: 0, B: 0 };

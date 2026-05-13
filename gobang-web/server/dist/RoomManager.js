@@ -24,6 +24,7 @@ class RoomManager {
             roomId = (0, types_1.generateRoomId)();
         }
         const room = handler.createRoom(socketId);
+        room.id = roomId;
         this.rooms.set(roomId, room);
         console.log(`[RoomManager] Room created: ${roomId} for ${gameId} by ${socketId}`);
         return room;
@@ -91,6 +92,42 @@ class RoomManager {
             return { success: false, error: 'game-not-supported' };
         }
         const result = handler.restartGame(socketId, roomId, this.rooms);
+        if (result.success && result.room) {
+            this.rooms.set(roomId, result.room);
+        }
+        return result;
+    }
+    startGame(socketId, roomId) {
+        const room = this.rooms.get(roomId);
+        if (!room) {
+            return { success: false, error: 'room-not-found' };
+        }
+        const handler = this.gameHandlers.get(room.gameId);
+        if (!handler) {
+            return { success: false, error: 'game-not-supported' };
+        }
+        if (!handler.startGame) {
+            return { success: false, error: 'method-not-supported' };
+        }
+        const result = handler.startGame(socketId, roomId, this.rooms);
+        if (result.success && result.room) {
+            this.rooms.set(roomId, result.room);
+        }
+        return result;
+    }
+    handlePass(socketId, roomId) {
+        const room = this.rooms.get(roomId);
+        if (!room) {
+            return { success: false, error: 'room-not-found' };
+        }
+        const handler = this.gameHandlers.get(room.gameId);
+        if (!handler) {
+            return { success: false, error: 'game-not-supported' };
+        }
+        if (!handler.handlePass) {
+            return { success: false, error: 'method-not-supported' };
+        }
+        const result = handler.handlePass(socketId, roomId, this.rooms);
         if (result.success && result.room) {
             this.rooms.set(roomId, result.room);
         }

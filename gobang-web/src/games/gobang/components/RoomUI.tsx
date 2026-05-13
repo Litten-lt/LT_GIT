@@ -3,7 +3,7 @@ import { ConnectionStatus } from '../../../hooks/useOnlineGame';
 
 interface OnlineRoom {
   id: string;
-  players: [string | null, string | null];
+  players: [string | null, string | null] | [string | null, string | null, string | null, string | null];
   state: 'waiting' | 'playing' | 'ended';
 }
 
@@ -12,7 +12,7 @@ interface RoomUIProps {
   onCreateRoom: () => void;
   onJoinRoom: (roomId: string) => void;
   roomId?: string | null;
-  playerIndex?: 0 | 1 | null;
+  playerIndex?: number | null;
   currentRoom?: OnlineRoom | null;
   onLeaveRoom?: () => void;
 }
@@ -41,6 +41,52 @@ export const RoomUI: React.FC<RoomUIProps> = ({
   };
 
   if (roomId && playerIndex !== null && playerIndex !== undefined) {
+    const players = currentRoom?.players;
+    const is4Player = players && players.length === 4;
+
+    if (is4Player) {
+      const playerLabels = ['玩家一', '玩家二', '玩家三', '玩家四'];
+      const joinedCount = players.filter(p => p !== null).length;
+
+      return (
+        <div className="flex flex-col items-center gap-4 p-6 bg-stone-800/80 rounded-xl border border-stone-600">
+          <div className="text-center">
+            <div className="text-amber-400 font-bold text-lg mb-1">房间号</div>
+            <div className="text-3xl font-mono tracking-widest text-amber-200">{roomId}</div>
+          </div>
+
+          <div className="flex items-center gap-4 text-sm">
+            <span className="text-stone-400">等待玩家加入...</span>
+            <span className="text-amber-200">({joinedCount}/4)</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 text-center">
+            {playerLabels.map((label, idx) => {
+              const hasJoined = players[idx] !== null;
+              const isMe = players[idx] === players[playerIndex];
+              return (
+                <div key={idx} className="flex items-center gap-2">
+                  <div className={`w-6 h-6 rounded-full ${hasJoined ? 'bg-amber-600' : 'bg-stone-600'}`} />
+                  <span className={`${hasJoined ? 'text-amber-100' : 'text-stone-500'} ${isMe ? 'font-bold' : ''}`}>
+                    {label}{isMe ? ' (你)' : ''}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {onLeaveRoom && (
+            <button
+              onClick={onLeaveRoom}
+              className="px-4 py-2 text-sm bg-stone-700 hover:bg-stone-600 text-stone-200 rounded-lg transition-colors"
+            >
+              离开房间
+            </button>
+          )}
+        </div>
+      );
+    }
+
     const opponentJoined = playerIndex === 0
       ? currentRoom?.players[1] !== null
       : currentRoom?.players[0] !== null;

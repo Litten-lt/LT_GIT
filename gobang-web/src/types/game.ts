@@ -35,7 +35,7 @@ export const GAME_LIST: BaseGameInfo[] = [
     nameCn: '红A',
     icon: '♥',
     description: '四人扑克牌游戏，红A是你的队友',
-    status: 'coming-soon',
+    status: 'available',
     playerCount: 4,
   },
 ];

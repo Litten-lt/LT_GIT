@@ -4,7 +4,7 @@ import { Server, Socket } from 'socket.io';
 import { RoomManager } from './RoomManager';
 import { GobangHandler, GobangRoom, GOBANG_GAME_ID } from './games/gobang/Handler';
 import { HongAHandler, HongARoom } from './games/honga/Handler';
-import { HONGA_GAME_ID } from './games/honga/types';
+import { HONGA_GAME_ID, Card } from './games/honga/types';
 
 const PORT = 3001;
 
@@ -142,7 +142,14 @@ function setupHongAHandlers() {
       }
       hongASocketToRoom.set(socket.id, room.id);
       socket.join(room.id);
-      socket.emit('room-created', { room, playerIndex: 0 });
+
+      const hongARoom = room as HongARoom;
+      const handsObj: Record<string, Card[]> = {};
+      for (const key in hongARoom.hands) {
+        handsObj[key] = hongARoom.hands[key];
+      }
+
+      socket.emit('room-created', { room: { ...hongARoom, hands: handsObj }, playerIndex: 0 });
       console.log(`[HongA] Room created: ${room.id} by ${socket.id}`);
     });
 
@@ -157,8 +164,15 @@ function setupHongAHandlers() {
 
       hongASocketToRoom.set(socket.id, roomId);
       socket.join(roomId);
-      socket.emit('room-joined', { room: result.room, playerIndex: result.playerIndex });
-      socket.to(roomId).emit('player-joined', { room: result.room });
+
+      const room = result.room as HongARoom;
+      const handsObj: Record<string, Card[]> = {};
+      for (const key in room.hands) {
+        handsObj[key] = room.hands[key];
+      }
+
+      socket.emit('room-joined', { room: { ...room, hands: handsObj }, playerIndex: result.playerIndex });
+      socket.to(roomId).emit('player-joined', { room: { ...room, hands: handsObj } });
       console.log(`[HongA] ${socket.id} joined room ${roomId} as player ${result.playerIndex}`);
     });
 
@@ -177,19 +191,60 @@ function setupHongAHandlers() {
       const room = result.room as HongARoom;
       const playerIndex = roomManager.getPlayerIndex(roomId, socket.id);
 
+      const handsObj: Record<string, Card[]> = {};
+      for (const key in room.hands) {
+        handsObj[key] = room.hands[key];
+      }
+
       hongAIO.to(roomId).emit('opponent-played', {
         playerIndex,
         cards,
+        room: {
+          ...room,
+          hands: handsObj,
+        },
       });
 
-      if (room.scores) {
-        hongAIO.to(roomId).emit('score-update', room.scores);
+      if (room.state === 'finished') {
+        hongAIO.to(roomId).emit('game-over', { room: { ...room, hands: handsObj } });
       }
     });
 
+    socket.on('start-game', ({ roomId }: { roomId: string }) => {
+      const result = roomManager.startGame(socket.id, roomId);
+
+      if (!result.success) {
+        socket.emit('error', { message: result.error!, code: result.error });
+        return;
+      }
+
+      const room = result.room as HongARoom;
+      const handsObj: Record<string, Card[]> = {};
+      for (const key in room.hands) {
+        handsObj[key] = room.hands[key];
+      }
+
+      hongAIO.to(roomId).emit('game-started', { room: { ...room, hands: handsObj } });
+    });
+
     socket.on('pass', ({ roomId }: { roomId: string }) => {
+      const result = roomManager.handlePass(socket.id, roomId);
+
+      if (!result.success) {
+        socket.emit('error', { message: result.error!, code: result.error });
+        return;
+      }
+
+      const room = result.room as HongARoom;
       const playerIndex = roomManager.getPlayerIndex(roomId, socket.id);
+
+      const handsObj: Record<string, Card[]> = {};
+      for (const key in room.hands) {
+        handsObj[key] = room.hands[key];
+      }
+
       hongAIO.to(roomId).emit('player-passed', { playerIndex });
+      hongAIO.to(roomId).emit('room-state', { room: { ...room, hands: handsObj } });
     });
 
     socket.on('restart-game', ({ roomId }: { roomId: string }) => {
@@ -215,11 +270,17 @@ function setupHongAHandlers() {
 }
 
 function handleHongALeave(socket: Socket, roomId: string) {
+  const room = roomManager.getRoom(roomId) as HongARoom | undefined;
+  if (!room) return;
+
   const opponentIds = roomManager.getOpponentSocketIds(roomId, socket.id);
   roomManager.leaveRoom(socket.id, roomId);
   socket.leave(roomId);
 
-  if (opponentIds.length > 0) {
+  if (room.state === 'playing' || room.state === 'ready') {
+    hongAIO.to(roomId).emit('player-left', { playerIndex: room.players.indexOf(socket.id) });
+    hongAIO.to(roomId).emit('game-over', { reason: 'player-left' });
+  } else if (opponentIds.length > 0) {
     socket.to(roomId).emit('opponent-left', {});
   }
 

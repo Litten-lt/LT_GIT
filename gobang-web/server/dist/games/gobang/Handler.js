@@ -57,9 +57,8 @@ exports.GobangHandler = {
     gameId: types_1.GOBANG_GAME_ID,
     maxPlayers: 2,
     createRoom(socketId) {
-        const roomId = (0, types_1.generateRoomId)();
         const room = {
-            id: roomId,
+            id: '',
             gameId: types_1.GOBANG_GAME_ID,
             players: [socketId, null],
             state: 'waiting',

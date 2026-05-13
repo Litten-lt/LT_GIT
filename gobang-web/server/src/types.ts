@@ -1,4 +1,4 @@
-export type RoomState = 'waiting' | 'playing' | 'ended';
+export type RoomState = 'waiting' | 'ready' | 'playing' | 'ended' | 'finished';
 
 export interface BaseRoom {
   id: string;
@@ -26,6 +26,8 @@ export interface GameHandler {
   createRoom(socketId: string): BaseRoom;
   joinRoom(socketId: string, roomId: string, rooms: Map<string, BaseRoom>): JoinRoomResult;
   handleMove(socketId: string, roomId: string, move: any, rooms: Map<string, BaseRoom>): { success: boolean; room?: BaseRoom; error?: string };
+  handlePass?(socketId: string, roomId: string, rooms: Map<string, BaseRoom>): { success: boolean; room?: BaseRoom; error?: string };
+  startGame?(socketId: string, roomId: string, rooms: Map<string, BaseRoom>): { success: boolean; room?: BaseRoom; error?: string };
   restartGame(socketId: string, roomId: string, rooms: Map<string, BaseRoom>): { success: boolean; room?: BaseRoom; error?: string };
   getPlayerIndex(roomId: string, socketId: string, rooms: Map<string, BaseRoom>): number | null;
   getOpponentSocketIds(roomId: string, socketId: string, rooms: Map<string, BaseRoom>): string[];
