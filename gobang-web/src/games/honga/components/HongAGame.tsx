@@ -183,10 +183,10 @@ export const HongAGame: React.FC<HongAGameProps> = ({
 
   const getCardDisplay = (card: Card): string => {
     const rankDisplay = RANK_DISPLAY[card.rank];
-    const suitChinese: Record<string, string> = {
-      spade: '黑桃', heart: '红桃', club: '梅花', diamond: '方片'
+    const suitSymbol: Record<string, string> = {
+      spade: '♠', heart: '♥', club: '♣', diamond: '♦'
     };
-    return `${suitChinese[card.suit]}${rankDisplay}`;
+    return `${rankDisplay}${suitSymbol[card.suit]}`;
   };
 
   const getCardTypeName = (cardType: string): string => {
@@ -231,7 +231,6 @@ export const HongAGame: React.FC<HongAGameProps> = ({
 
   const renderCard = (card: Card, isSelected: boolean, isPlayable: boolean) => {
     const isRed = card.suit === 'heart' || card.suit === 'diamond';
-    const isPointCard = card.rank === 5 || card.rank === 10 || card.rank === 13;
     return (
       <button
         key={`${card.suit}-${card.rank}`}
@@ -255,9 +254,6 @@ export const HongAGame: React.FC<HongAGameProps> = ({
             target.parentElement!.innerHTML = `<span class="${isRed ? 'text-red-600' : 'text-gray-900'} text-lg font-bold">${getCardDisplay(card)}</span>`;
           }}
         />
-        {isPointCard && (
-          <span className="absolute bottom-0.5 text-xs text-yellow-500">分</span>
-        )}
       </button>
     );
   };
@@ -271,19 +267,20 @@ export const HongAGame: React.FC<HongAGameProps> = ({
       );
     }
     return (
-      <div className="flex flex-col items-center py-4">
+      <div className="flex flex-col py-4">
         <div className="text-slate-400 text-xs mb-2">本轮出牌</div>
-        {currentRoom.roundHistory.map((play, playIndex) => (
-          <div key={playIndex} className="mb-2">
-            <div className="text-xs text-slate-500 mb-1">
-              玩家 {play.playerIndex + 1} [{getCardTypeName(play.cardType)}]
-            </div>
-            <div className="flex gap-1 flex-wrap justify-center">
-              {play.cards.map((card, cardIndex) => {
-                const isPointCard = card.rank === 5 || card.rank === 10 || card.rank === 13;
-                return (
-                  <div key={cardIndex}>
+        <div className="flex flex-row gap-4 overflow-x-auto">
+          {currentRoom.roundHistory.map((play, playIndex) => (
+            <div key={playIndex} className="flex flex-col items-center min-w-[80px]">
+              <div className="text-xs text-slate-500 mb-1">
+                {play.playerIndex + 1}[{getCardTypeName(play.cardType)}]
+              </div>
+              <div className="flex gap-1 flex-wrap justify-center">
+                {play.cards.map((card, cardIndex) => {
+                  const isPointCard = card.rank === 5 || card.rank === 10 || card.rank === 13;
+                  return (
                     <img
+                      key={cardIndex}
                       src={getCardImage(card)}
                       alt={getCardDisplay(card)}
                       className={`w-8 h-12 rounded border-2 object-contain
@@ -294,12 +291,12 @@ export const HongAGame: React.FC<HongAGameProps> = ({
                         target.parentElement!.innerHTML = `<span class="text-xs font-bold ${isPointCard ? 'text-yellow-600' : 'text-gray-900'}">${getCardDisplay(card)}</span>`;
                       }}
                     />
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     );
   };
