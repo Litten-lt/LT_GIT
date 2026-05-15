@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Card } from '../games/honga/types';
+import { Card, RANK_DISPLAY } from '../games/honga/types';
+
+const SUIT_CHINESE: Record<string, string> = {
+  spade: '黑桃', heart: '红桃', club: '梅花', diamond: '方片'
+};
 
 export type HongAConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
@@ -27,6 +31,7 @@ export interface HongARoomState {
   roundHistory: {
     playerIndex: number;
     cards: Card[];
+    cardType: string;
   }[];
   scores: { A: number; B: number };
   playerScores: Record<string, number>;
@@ -160,7 +165,8 @@ export function useHongAOnline(): UseHongAOnlineReturn {
     });
 
     socket.on('opponent-played', ({ playerIndex: idx, cards, room: updatedRoom }: { playerIndex: number; cards: any[]; room?: any }) => {
-      addLog('play', `玩家 ${idx + 1} 出牌: ${cards.map((c: any) => `${c.suit}${c.rank}`).join(',')}`);
+      const cardStr = cards.map((c: any) => `${SUIT_CHINESE[c.suit]}${RANK_DISPLAY[c.rank as keyof typeof RANK_DISPLAY]}`).join(',');
+      addLog('play', `玩家 ${idx + 1} 出牌: ${cardStr}`);
       setCurrentRoom(prev => {
         if (!prev) return prev;
         const newRoom = updatedRoom ? convertRoom(updatedRoom) : prev;

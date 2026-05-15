@@ -109,11 +109,14 @@ export const HongAGame: React.FC<HongAGameProps> = ({
     return sortHand(hand);
   }, [mySocketId, currentRoom]);
 
-  const myScore = useMemo(() => {
-    if (!currentRoom || !mySocketId) return 0;
-    if (!currentRoom.playerScores) return 0;
-    return currentRoom.playerScores[mySocketId] || 0;
-  }, [currentRoom, mySocketId]);
+  const allPlayerScores = useMemo(() => {
+    if (!currentRoom) return [];
+    return currentRoom.players.map((socketId, index) => ({
+      index,
+      socketId: socketId || '',
+      score: socketId ? (currentRoom.playerScores?.[socketId] || 0) : 0,
+    }));
+  }, [currentRoom]);
 
   const handleCardSelect = useCallback((card: Card) => {
     setSelectedCards(prev => {
@@ -180,13 +183,26 @@ export const HongAGame: React.FC<HongAGameProps> = ({
 
   const getCardDisplay = (card: Card): string => {
     const rankDisplay = RANK_DISPLAY[card.rank];
-    const suitSymbol: Record<string, string> = {
-      spade: '♠',
-      heart: '♥',
-      club: '♣',
-      diamond: '♦',
+    const suitChinese: Record<string, string> = {
+      spade: '黑桃', heart: '红桃', club: '梅花', diamond: '方片'
     };
-    return `${rankDisplay}${suitSymbol[card.suit]}`;
+    return `${suitChinese[card.suit]}${rankDisplay}`;
+  };
+
+  const getCardTypeName = (cardType: string): string => {
+    const names: Record<string, string> = {
+      'single': '单张',
+      'pair': '对子',
+      'triple': '三张',
+      'straight': '顺子',
+      'triple-one': '三带一',
+      'triple-pair': '三带一对',
+      'bomb-4': '地炸',
+      'bomb-5-10-k': '5+10+K',
+      'bomb-4-pair': '连对炸弹',
+      'sky-bomb': '天炸',
+    };
+    return names[cardType] || cardType;
   };
 
   const getCardImage = (card: Card): string => {
@@ -259,7 +275,9 @@ export const HongAGame: React.FC<HongAGameProps> = ({
         <div className="text-slate-400 text-xs mb-2">本轮出牌</div>
         {currentRoom.roundHistory.map((play, playIndex) => (
           <div key={playIndex} className="mb-2">
-            <div className="text-xs text-slate-500 mb-1">玩家 {play.playerIndex + 1}</div>
+            <div className="text-xs text-slate-500 mb-1">
+              玩家 {play.playerIndex + 1} [{getCardTypeName(play.cardType)}]
+            </div>
             <div className="flex gap-1 flex-wrap justify-center">
               {play.cards.map((card, cardIndex) => {
                 const isPointCard = card.rank === 5 || card.rank === 10 || card.rank === 13;
@@ -420,8 +438,17 @@ export const HongAGame: React.FC<HongAGameProps> = ({
               <div className="text-slate-400">
                 回合: <span className="text-white font-bold">{currentRoom.currentPlayerIndex}</span>
               </div>
-              <div className="text-slate-400">
-                我的分数: <span className="text-cyan-400 font-bold">{myScore}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400">分数:</span>
+                {allPlayerScores.map((ps, i) => {
+                  const isMe = ps.socketId === mySocketId;
+                  const label = isMe ? '你' : `玩家${['一','二','三','四'][i]}`;
+                  return (
+                    <span key={i} className={`text-xs ${isMe ? 'text-cyan-400' : 'text-slate-400'}`}>
+                      {label}：{ps.score}
+                    </span>
+                  );
+                })}
               </div>
               {isMyTurn && (
                 <div className="px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-sm">

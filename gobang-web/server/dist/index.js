@@ -224,6 +224,10 @@ function handleHongALeave(socket, roomId) {
     const room = roomManager.getRoom(roomId);
     if (!room)
         return;
+    const playerIndex = room.players.indexOf(socket.id);
+    if (playerIndex !== -1 && !room.finishedPlayers.includes(socket.id)) {
+        room.finishedPlayers.push(socket.id);
+    }
     const opponentIds = roomManager.getOpponentSocketIds(roomId, socket.id);
     roomManager.leaveRoom(socket.id, roomId);
     socket.leave(roomId);

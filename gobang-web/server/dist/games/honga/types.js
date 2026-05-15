@@ -158,6 +158,7 @@ function getCardsScore(cards) {
 function compareCards(a, b) {
     const typeA = getCardType(a);
     const typeB = getCardType(b);
+    console.log(`[compareCards] a=[${a.map(c => c.suit + c.rank).join(',')}], typeA=${typeA}, b=[${b.map(c => c.suit + c.rank).join(',')}], typeB=${typeB}`);
     if (!typeA || !typeB)
         return 0;
     const bombPriority = {
@@ -174,37 +175,77 @@ function compareCards(a, b) {
     };
     const priorityA = bombPriority[typeA];
     const priorityB = bombPriority[typeB];
+    console.log(`[compareCards] priorityA=${priorityA}, priorityB=${priorityB}`);
     if (priorityA !== priorityB) {
-        return priorityA - priorityB;
+        const result = priorityA - priorityB;
+        console.log(`[compareCards] different priority, returning ${result}`);
+        return result;
     }
     if (typeA === 'straight' || typeA === 'bomb-5-10-k') {
         if (a.length !== b.length) {
-            return a.length - b.length;
+            const result = a.length - b.length;
+            console.log(`[compareCards] straight/bomb-5-10-k different length, returning ${result}`);
+            return result;
         }
         const maxRankA = Math.max(...a.map(c => c.rank));
         const maxRankB = Math.max(...b.map(c => c.rank));
-        return maxRankA - maxRankB;
+        const result = maxRankA - maxRankB;
+        console.log(`[compareCards] straight/bomb-5-10-k same length, maxRankA=${maxRankA}, maxRankB=${maxRankB}, returning ${result}`);
+        return result;
     }
     if (typeA === 'bomb-4') {
         const maxRankA = Math.max(...a.map(c => c.rank));
         const maxRankB = Math.max(...b.map(c => c.rank));
-        return maxRankA - maxRankB;
+        const result = maxRankA - maxRankB;
+        console.log(`[compareCards] bomb-4, maxRankA=${maxRankA}, maxRankB=${maxRankB}, returning ${result}`);
+        return result;
+    }
+    if (typeA === 'triple-pair') {
+        const rankCount = {};
+        for (const card of a) {
+            rankCount[card.rank] = (rankCount[card.rank] || 0) + 1;
+        }
+        let tripleRankA = 0;
+        for (const [rank, count] of Object.entries(rankCount)) {
+            if (count === 3)
+                tripleRankA = Number(rank);
+        }
+        const rankCountB = {};
+        for (const card of b) {
+            rankCountB[card.rank] = (rankCountB[card.rank] || 0) + 1;
+        }
+        let tripleRankB = 0;
+        for (const [rank, count] of Object.entries(rankCountB)) {
+            if (count === 3)
+                tripleRankB = Number(rank);
+        }
+        const result = tripleRankA - tripleRankB;
+        console.log(`[compareCards] triple-pair, tripleRankA=${tripleRankA}, tripleRankB=${tripleRankB}, returning ${result}`);
+        return result;
     }
     if (typeA === 'single' || typeA === 'pair' || typeA === 'triple') {
         if (a[0].rank !== b[0].rank) {
-            return a[0].rank - b[0].rank;
+            const result = a[0].rank - b[0].rank;
+            console.log(`[compareCards] single/pair/triple, a.rank=${a[0].rank}, b.rank=${b[0].rank}, returning ${result}`);
+            return result;
         }
         if (typeA === 'pair' || typeA === 'triple') {
+            console.log(`[compareCards] pair/triple same rank, returning 0`);
             return 0;
         }
         const suitA = exports.SUIT_PRIORITY[a[0].suit];
         const suitB = exports.SUIT_PRIORITY[b[0].suit];
-        return suitA - suitB;
+        const result = suitA - suitB;
+        console.log(`[compareCards] single same rank, suitA=${suitA}, suitB=${suitB}, returning ${result}`);
+        return result;
     }
+    console.log(`[compareCards] no matching case, returning 0`);
     return 0;
 }
 function canBeat(lastPlay, newPlay) {
-    return compareCards(newPlay, lastPlay) > 0;
+    const result = compareCards(newPlay, lastPlay);
+    console.log(`[canBeat] ENTRY: lastPlay=[${lastPlay.map(c => c.suit + c.rank).join(',')}], newPlay=[${newPlay.map(c => c.suit + c.rank).join(',')}], compareResult=${result}, returning=${result > 0}`);
+    return result > 0;
 }
 function getNextPlayerIndex(current, players) {
     let next = (current + 1) % 4;
