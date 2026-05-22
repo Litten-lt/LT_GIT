@@ -3,8 +3,14 @@ name: CI/CD
 on:
   push:
     branches: [main, tmp-gobang]
+    paths:
+      - 'gobang-web/**'
+      - '.github/workflows/**'
   pull_request:
     branches: [main, tmp-gobang]
+    paths:
+      - 'gobang-web/**'
+      - '.github/workflows/**'
 
 env:
   NODE_VERSION: '20'
@@ -17,21 +23,27 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            gobang-web
+            .github/workflows
+          sparse-checkout-cone-mode: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
+          cache-dependency-path: 'gobang-web/package-lock.json'
 
       - name: Install dependencies
-        run: npm ci
+        run: cd gobang-web && npm ci
 
       - name: TypeScript check
-        run: npm run build
+        run: cd gobang-web && npm run build
 
       - name: Run unit tests
-        run: npm run test
+        run: cd gobang-web && npm run test
 
   deploy:
     name: Deploy to Production
@@ -42,18 +54,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            gobang-web
+            .github/workflows
+          sparse-checkout-cone-mode: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
+          cache-dependency-path: 'gobang-web/package-lock.json'
 
       - name: Install dependencies
-        run: npm ci
+        run: cd gobang-web && npm ci
 
       - name: Build
-        run: npm run build
+        run: cd gobang-web && npm run build
 
       - name: Deploy to server
         uses: appleboy/scp-action@v0.1.4
