@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /tmp/gh/)",
+      "Read(//tmp/**)",
+      "Bash(cp \"C:/Users/LongTeng/.ssh/github_actions_key\" \"C:/Users/LongTeng/Desktop/Allen/LT_GIT/gobang-web/PRIVATE_KEY.txt\" && echo \"Private key copied\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\LongTeng\\.ssh"
+    ]
+  }
+}
