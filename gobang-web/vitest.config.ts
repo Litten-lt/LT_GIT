@@ -6,5 +6,13 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    exclude: [
+      '**/node_modules/**',
+      '**/e2e/**',
+      '**/tests/e2e/**'
+    ],
+    include: [
+      'tests/**/*.test.ts'
+    ],
   },
 });
