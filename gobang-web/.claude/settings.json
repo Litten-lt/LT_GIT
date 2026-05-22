@@ -3,7 +3,16 @@
     "allow": [
       "Bash(ls -la /tmp/gh/)",
       "Read(//tmp/**)",
-      "Bash(cp \"C:/Users/LongTeng/.ssh/github_actions_key\" \"C:/Users/LongTeng/Desktop/Allen/LT_GIT/gobang-web/PRIVATE_KEY.txt\" && echo \"Private key copied\")"
+      "Bash(cp \"C:/Users/LongTeng/.ssh/github_actions_key\" \"C:/Users/LongTeng/Desktop/Allen/LT_GIT/gobang-web/PRIVATE_KEY.txt\" && echo \"Private key copied\")",
+      "Bash(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(curl -s \"https://api.github.com/repos/Litten-lt/LT_GIT/actions/workflows\")",
+      "Bash(curl -s \"https://api.github.com/repos/Litten-lt/LT_GIT/actions/workflows\" -H \"Accept: application/vnd.github.v3+json\")",
+      "Bash(curl -s \"https://api.github.com/repos/Litten-lt/LT_GIT\")",
+      "Read(//c/Users/LongTeng/**)",
+      "Bash(curl -s -u \"Litten-lt:$\\(cat ~/.gitconfig || echo ''\\)\" \"https://api.github.com/repos/Litten-lt/LT_GIT\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\LongTeng\\.ssh"
