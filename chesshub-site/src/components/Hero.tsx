@@ -1,89 +1,74 @@
 export default function Hero() {
   return (
-    <section id="about" className="relative max-w-6xl mx-auto px-6 pt-12 pb-20">
-      <div className="grid md:grid-cols-[1.4fr_1fr] gap-10 items-center">
-        {/* 左：自我介绍 */}
-        <div>
-          <div className="inline-flex items-center gap-2 chip mb-6">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyber-accent animate-pulse" />
-            <span>深圳 · 嵌入式软件工程师</span>
-          </div>
+    <section id="about" className="relative pt-20 pb-32 lg:pt-28 lg:pb-40">
+      <div className="max-w-6xl mx-auto px-6 lg:px-10">
+        {/* 顶部小标签 */}
+        <div className="flex items-center gap-2 text-xs font-mono text-ink-soft/70 mb-8">
+          <span className="inline-block w-8 h-px bg-accent" />
+          <span>PORTFOLIO / 2026</span>
+        </div>
 
-          <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.05] tracking-tight">
-            <span className="text-gradient">LongTeng</span>
-            <br />
-            <span className="text-slate-100">在造点有意思的</span>
-            <span className="inline-block animate-float ml-2">⚡</span>
+        {/* 居中主标题 */}
+        <div className="text-center max-w-4xl mx-auto">
+          <p className="text-ink-soft text-base md:text-lg font-medium mb-6">
+            你好,我是
+          </p>
+          <h1 className="font-extrabold text-ink text-6xl sm:text-7xl md:text-8xl lg:text-9xl leading-[0.95] tracking-tight">
+            <span className="underline-scribble">LongTeng</span>
+            <span className="text-accent">.</span>
           </h1>
-
-          <p className="mt-6 text-lg text-slate-300/90 leading-relaxed max-w-2xl">
-            白天写 C / Lua 驱动 WiFi 产品，晚上切二次元折腾 Blender 和 AI。
-            <br />
-            相信 <span className="text-cyber-accent">硬核技术</span> 和{' '}
-            <span className="text-cyber-pink">好玩的东西</span> 不该是反义词。
+          <p className="mt-8 text-2xl md:text-3xl font-semibold text-ink leading-snug">
+            嵌入式软件工程师 · AI 玩家 · 二次元
+          </p>
+          <p className="mt-5 text-ink-soft text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
+            白天写 C / Lua 驱动 WiFi 产品,晚上切二次元折腾 Blender 和 AI。
+            <br className="hidden sm:block" />
+            相信<strong className="text-ink">硬核技术</strong>和<strong className="text-ink">好玩的东西</strong>不该是反义词。
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center gap-4">
+          {/* 按钮组 */}
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
             <a
               href="/gobang/"
-              className="btn-glow px-6 py-3 rounded-xl font-semibold text-white shadow-lg"
+              className="btn-solid"
             >
-              玩五子棋 →
+              玩五子棋
+              <span>→</span>
             </a>
             <a
               href="https://github.com/Litten-lt"
               target="_blank"
               rel="noreferrer"
-              className="glass px-6 py-3 rounded-xl font-semibold text-slate-200 hover:text-cyber-accent transition"
+              className="btn-ghost"
             >
               GitHub 主页
             </a>
+            <a
+              href="#contact"
+              className="btn-ghost"
+            >
+              联系我
+            </a>
           </div>
 
-          {/* 数据条 */}
-          <div className="mt-10 grid grid-cols-3 gap-4 max-w-xl">
-            <Stat label="主语言" value="C / TS" />
-            <Stat label="在搞" value="Blender + AI" />
-            <Stat label="常驻地" value="深圳" />
+          {/* 状态行 */}
+          <div className="mt-16 flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm text-ink-soft">
+            <span className="inline-flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>当前可接外包 / 合作</span>
+            </span>
+            <span className="hidden sm:inline text-ink/20">·</span>
+            <span>深圳 · China</span>
+            <span className="hidden sm:inline text-ink/20">·</span>
+            <span className="font-mono">7+ 年写代码</span>
           </div>
         </div>
 
-        {/* 右：角色立绘占位 */}
-        <div className="relative">
-          <div className="relative aspect-[3/4] rounded-3xl overflow-hidden glass">
-            <div className="grid-bg absolute inset-0" />
-            <div className="scanline" />
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
-              <div className="text-7xl mb-4 animate-float">🎮</div>
-              <div className="text-cyber-accent font-mono text-sm tracking-widest">
-                AVATAR_SLOT
-              </div>
-              <div className="text-slate-400 text-xs mt-2">
-                把你的 Blender 渲染图<br />放到 public/avatar.png
-              </div>
-              <div className="mt-6 text-xs text-slate-500 font-mono">
-                1024 × 1366 · PNG / JPG
-              </div>
-            </div>
-            {/* 装饰角标 */}
-            <div className="absolute top-3 left-3 text-xs font-mono text-cyber-accent/70">
-              [ID] 0315
-            </div>
-            <div className="absolute bottom-3 right-3 text-xs font-mono text-cyber-pink/70">
-              LV.∞
-            </div>
-          </div>
+        {/* 向下滚动提示 */}
+        <div className="mt-20 flex justify-center">
+          <div className="scroll-hint" />
         </div>
       </div>
     </section>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="glass rounded-xl px-4 py-3">
-      <div className="text-xs text-slate-400 font-mono">{label}</div>
-      <div className="text-base font-semibold text-slate-100 mt-0.5">{value}</div>
-    </div>
   )
 }

@@ -1,60 +1,91 @@
 import { useEffect, useState } from 'react'
-import Hero from './components/Hero'
-import IdentityTags from './components/IdentityTags'
-import Projects from './components/Projects'
-import Contact from './components/Contact'
-import Footer from './components/Footer'
-import Sakura from './components/Sakura'
+import { isLoggedIn, getRole, getUsername, clearAuth } from './auth'
 
-export default function App() {
+type Props = {
+  current?: 'home' | 'travel' | 'blog' | 'figures'
+  children?: React.ReactNode
+}
+
+export default function App({ current = 'home', children }: Props) {
   const [time, setTime] = useState('')
 
   useEffect(() => {
     const tick = () => {
       const d = new Date()
-      const fmt = d.toLocaleString('zh-CN', {
+      const fmt = d.toLocaleString('en-US', {
+        timeZone: 'Asia/Shanghai',
         hour: '2-digit',
         minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
+        hour12: true,
       })
-      setTime(fmt)
+      setTime(`SZ · ${fmt}`)
     }
     tick()
-    const id = setInterval(tick, 1000)
+    const id = setInterval(tick, 30_000)
     return () => clearInterval(id)
   }, [])
 
-  return (
-    <div className="relative min-h-screen text-slate-100">
-      <Sakura count={18} />
+  // 守卫:未登录 → 跳 login.html
+  // 放第一行 useEffect 之前,同步检查
+  if (typeof window !== 'undefined' && !isLoggedIn()) {
+    window.location.replace('/login.html')
+    return (
+      <div className="min-h-screen flex items-center justify-center text-ink-soft text-sm">
+        跳转登录中…
+      </div>
+    )
+  }
 
-      {/* 顶部状态栏 */}
-      <header className="fixed top-0 left-0 right-0 z-30 glass">
-        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between text-sm">
-          <div className="flex items-center gap-2 font-mono">
-            <span className="w-2 h-2 rounded-full bg-cyber-accent animate-glow" />
-            <span className="text-cyber-accent">chesshub.fun</span>
-            <span className="text-slate-500 hidden sm:inline">// online</span>
+  const role = getRole()
+  const username = getUsername()
+  const isAdmin = role === 'admin'
+
+  return (
+    <div className="relative min-h-screen flex flex-col text-ink">
+      {/* 顶部 */}
+      <header className="border-b border-ink/10">
+        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+          <a
+            href="/"
+            className="font-serif text-xl tracking-tight text-ink"
+            style={{ fontFamily: 'Fraunces, "Source Han Serif SC", Georgia, serif' }}
+          >
+            LongTeng<span className="text-accent">.</span>
+          </a>
+          <div className="flex items-center gap-3 text-xs">
+            <span
+              className={`px-2 py-0.5 rounded-full font-mono ${
+                isAdmin
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-amber-100 text-amber-700'
+              }`}
+            >
+              {isAdmin ? '✓ Admin' : '👀 游客'}
+            </span>
+            <span className="text-ink-soft hidden sm:inline">{username}</span>
+            <span className="font-mono text-ink-soft/60 hidden md:inline">{time}</span>
+            <button
+              onClick={() => {
+                if (confirm('确认登出?')) {
+                  clearAuth()
+                  window.location.href = '/login.html'
+                }
+              }}
+              className="text-ink-soft hover:text-accent transition"
+            >
+              登出
+            </button>
           </div>
-          <nav className="hidden md:flex items-center gap-6 text-slate-300">
-            <a href="#about" className="link-anim hover:text-cyber-accent">关于</a>
-            <a href="#projects" className="link-anim hover:text-cyber-accent">项目</a>
-            <a href="#contact" className="link-anim hover:text-cyber-accent">联系</a>
-            <a href="/gobang/" className="link-anim hover:text-cyber-pink">五子棋 ↗</a>
-          </nav>
-          <div className="font-mono text-cyber-accent/80">{time}</div>
         </div>
       </header>
 
-      <main className="relative z-10 pt-24">
-        <Hero />
-        <IdentityTags />
-        <Projects />
-        <Contact />
-      </main>
+      <main className="flex-1">{children}</main>
 
-      <Footer />
+      <footer className="border-t border-ink/10">
+        <div className="max-w-3xl mx-auto px-6 py-6 text-center text-xs text-ink-soft/60">
+          © 2026 LongTeng · built with <span className="text-accent">♥</span>
+        </div>
+      </footer>
     </div>
   )
 }
