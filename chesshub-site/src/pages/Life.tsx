@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import App from '../App'
 import {
-  listTravels,
-  createTravel,
-  updateTravel,
-  deleteTravel,
+  listNotes,
+  createNote,
+  updateNote,
+  deleteNote,
   uploadImage,
-  type Travel,
+  type Note,
 } from '../api'
 import { isAdmin, isGuest, ensureLoggedIn, clearAuth } from '../auth'
 
@@ -18,8 +18,8 @@ type PendingImage = {
   preview: string
 }
 
-export default function TravelPage() {
-  const [travels, setTravels] = useState<Travel[]>([])
+export default function Life() {
+  const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
   const [admin, setAdmin] = useState(false)
   const [guest, setGuest] = useState(false)
@@ -28,7 +28,7 @@ export default function TravelPage() {
   const [editingId, setEditingId] = useState<number | null>(null)
 
   const [title, setTitle] = useState('')
-  const [location, setLocation] = useState('')
+  const [scene, setScene] = useState('')
   const [description, setDescription] = useState('')
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
 
@@ -42,16 +42,16 @@ export default function TravelPage() {
     if (!ensureLoggedIn()) return
     setAdmin(isAdmin())
     setGuest(isGuest())
-    loadTravels()
+    loadNotes()
   }, [])
 
-  async function loadTravels() {
+  async function loadNotes() {
     setLoading(true)
     try {
-      const { travels } = await listTravels()
-      setTravels(travels)
+      const { notes } = await listNotes()
+      setNotes(notes)
     } catch (e: any) {
-      console.error('loadTravels error:', e)
+      console.error('loadNotes error:', e)
       if (e.message?.includes('token')) {
         clearAuth()
         window.location.href = '/login.html'
@@ -68,18 +68,18 @@ export default function TravelPage() {
     setFormMode('create')
   }
 
-  function openEdit(t: Travel) {
-    setTitle(t.title)
-    setLocation(t.location || '')
-    setDescription(t.description)
+  function openEdit(n: Note) {
+    setTitle(n.title)
+    setScene(n.scene || '')
+    setDescription(n.description)
     setPendingImages(
-      t.images.map((url) => ({
+      n.images.map((url) => ({
         key: url,
         url,
         preview: url,
       })),
     )
-    setEditingId(t.id)
+    setEditingId(n.id)
     setFormMode('edit')
   }
 
@@ -93,14 +93,14 @@ export default function TravelPage() {
 
   function hasUnsavedChanges(): boolean {
     if (!formMode) return false
-    if (title.trim() || location.trim() || description.trim()) return true
+    if (title.trim() || scene.trim() || description.trim()) return true
     if (formMode === 'create' && pendingImages.length > 0) return true
     return false
   }
 
   function resetForm() {
     setTitle('')
-    setLocation('')
+    setScene('')
     setDescription('')
     setPendingImages([])
     setUploadProgress({ done: 0, total: 0, currentName: '' })
@@ -203,18 +203,18 @@ export default function TravelPage() {
       })
 
       if (formMode === 'create') {
-        await createTravel({
+        await createNote({
           title: title.trim(),
-          location: location.trim() || undefined,
+          scene: scene.trim() || undefined,
           description: description.trim(),
           images: finalImages,
           date: new Date().toISOString().slice(0, 7).replace('-', '.'),
         })
         alert(`发布成功!共 ${finalImages.length} 张照片`)
       } else if (formMode === 'edit' && editingId) {
-        await updateTravel(editingId, {
+        await updateNote(editingId, {
           title: title.trim(),
-          location: location.trim() || undefined,
+          scene: scene.trim() || undefined,
           description: description.trim(),
           images: finalImages,
         })
@@ -224,7 +224,7 @@ export default function TravelPage() {
       resetForm()
       setFormMode(null)
       setEditingId(null)
-      await loadTravels()
+      await loadNotes()
     } catch (err: any) {
       alert((formMode === 'edit' ? '保存失败: ' : '发布失败: ') + (err.message || err))
     } finally {
@@ -237,32 +237,32 @@ export default function TravelPage() {
   async function handleDelete(id: number) {
     if (!confirm('确认删除这条? (图片也会一起删)')) return
     try {
-      await deleteTravel(id)
-      await loadTravels()
+      await deleteNote(id)
+      await loadNotes()
     } catch (err: any) {
       alert('删除失败: ' + (err.message || err))
     }
   }
 
   return (
-    <App current="travel">
+    <App current="life">
       <div className="max-w-3xl mx-auto px-6 pt-12 pb-24">
         {/* 顶部介绍 */}
         <div className="text-center mb-10">
-          <p className="text-xs font-mono text-accent mb-3 tracking-widest">/ TRAVEL</p>
+          <p className="text-xs font-mono text-accent mb-3 tracking-widest">/ LIFE</p>
           <h1 className="text-4xl md:text-5xl font-extrabold text-ink">
-            去过的地方<span className="text-accent">.</span>
+            生活随笔<span className="text-accent">.</span>
           </h1>
           <p className="mt-4 text-ink-soft max-w-xl mx-auto leading-relaxed">
-            记录走过的路。
-            每条都附上时间、地点和一路的照片,慢慢写。
+            不一定有意义,但都是真实的日子。
+            每条都附上场景、随笔和随手拍的照片。
           </p>
         </div>
 
         {/* 登录状态 + 操作栏 */}
         <div className="flex items-center justify-between mb-8 border-b border-ink/10 pb-4 gap-3 flex-wrap">
           <span className="text-sm text-ink-soft">
-            共 <span className="text-ink font-semibold">{travels.length}</span> 条
+            共 <span className="text-ink font-semibold">{notes.length}</span> 条
             {loading && <span className="ml-2 text-xs text-ink-soft/60">加载中…</span>}
           </span>
           <div className="flex items-center gap-2">
@@ -303,7 +303,7 @@ export default function TravelPage() {
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="例:大理 · 苍山下的四天"
+                placeholder="例:周末咖啡 · 第一杯手冲"
                 disabled={submitting}
                 className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 disabled:opacity-50"
               />
@@ -311,13 +311,13 @@ export default function TravelPage() {
 
             <div>
               <label className="block text-xs font-mono text-ink-soft mb-1.5 uppercase tracking-widest">
-                地点 (可选)
+                场景 (可选)
               </label>
               <input
                 type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="例:云南 · 大理"
+                value={scene}
+                onChange={(e) => setScene(e.target.value)}
+                placeholder="例:深圳 · 家里 / 楼下咖啡店"
                 disabled={submitting}
                 className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 disabled:opacity-50"
               />
@@ -325,13 +325,13 @@ export default function TravelPage() {
 
             <div>
               <label className="block text-xs font-mono text-ink-soft mb-1.5 uppercase tracking-widest">
-                描述 / 心得 *
+                随笔 *
               </label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={5}
-                placeholder="行程、吃了什么、遇到的人、有意思的细节..."
+                placeholder="这天发生了什么,想到了什么..."
                 disabled={submitting}
                 className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 resize-none disabled:opacity-50"
               />
@@ -461,20 +461,20 @@ export default function TravelPage() {
         {/* 列表 */}
         {loading ? (
           <div className="text-center py-20 text-ink-soft/60">加载中…</div>
-        ) : travels.length === 0 ? (
+        ) : notes.length === 0 ? (
           <div className="text-center py-20 text-ink-soft/60">
             还没发布,{admin ? '点 + 发布 发上第一条吧' : '请联系管理员发布'}
           </div>
         ) : (
           <div className="space-y-12">
-            {travels.map((t) => (
-              <TravelCard
-                key={t.id}
-                travel={t}
+            {notes.map((n) => (
+              <NoteCard
+                key={n.id}
+                note={n}
                 canEdit={admin}
                 canDelete={admin}
-                onEdit={() => openEdit(t)}
-                onDelete={() => handleDelete(t.id)}
+                onEdit={() => openEdit(n)}
+                onDelete={() => handleDelete(n.id)}
               />
             ))}
           </div>
@@ -488,14 +488,14 @@ export default function TravelPage() {
   )
 }
 
-function TravelCard({
-  travel,
+function NoteCard({
+  note,
   canEdit,
   canDelete,
   onEdit,
   onDelete,
 }: {
-  travel: Travel
+  note: Note
   canEdit: boolean
   canDelete: boolean
   onEdit?: () => void
@@ -504,7 +504,7 @@ function TravelCard({
   return (
     <article className="border-l-2 border-ink/10 pl-6 hover:border-accent transition-colors">
       <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
-        <div className="text-xs font-mono text-ink-soft/60">{travel.date}</div>
+        <div className="text-xs font-mono text-ink-soft/60">{note.date}</div>
         {(canEdit || canDelete) && (
           <div className="flex items-center gap-3">
             {canEdit && onEdit && (
@@ -526,16 +526,16 @@ function TravelCard({
           </div>
         )}
       </div>
-      <h2 className="text-2xl font-bold text-ink mb-1">{travel.title}</h2>
-      {travel.location && (
-        <div className="text-sm text-ink-soft/80 mb-3">📍 {travel.location}</div>
+      <h2 className="text-2xl font-bold text-ink mb-1">{note.title}</h2>
+      {note.scene && (
+        <div className="text-sm text-ink-soft/80 mb-3">📍 {note.scene}</div>
       )}
       <p className="text-ink-soft leading-relaxed whitespace-pre-wrap mb-4">
-        {travel.description}
+        {note.description}
       </p>
-      {travel.images.length > 0 && (
+      {note.images.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {travel.images.map((url, i) => (
+          {note.images.map((url, i) => (
             <a
               key={i}
               href={url}
@@ -545,7 +545,7 @@ function TravelCard({
             >
               <img
                 src={url}
-                alt={`${travel.title} ${i + 1}`}
+                alt={`${note.title} ${i + 1}`}
                 className="w-full h-auto"
                 loading="lazy"
               />

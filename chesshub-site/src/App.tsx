@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { isLoggedIn, getRole, getUsername, clearAuth } from './auth'
 
 type Props = {
-  current?: 'home' | 'travel' | 'blog' | 'figures'
+  current?: 'home' | 'travel' | 'blog' | 'figures' | 'life' | 'work'
   children?: React.ReactNode
 }
 

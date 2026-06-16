@@ -115,3 +115,147 @@ export function uploadImage(file: File): Promise<{ url: string; filename: string
 export function filenameFromUrl(url: string): string {
   return url.split('/').pop() || ''
 }
+
+// ---------- 旅行 ----------
+export type Travel = {
+  id: number
+  title: string
+  location?: string
+  description: string
+  date: string
+  images: string[]  // 完整 URL
+}
+
+export function listTravels() {
+  return request<{ travels: Travel[] }>('/travels')
+}
+
+export function createTravel(payload: {
+  title: string
+  location?: string
+  description: string
+  images: string[]
+  date?: string
+}) {
+  return request<{ id: number }>('/travels', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteTravel(id: number) {
+  return request<{ ok: true }>(`/travels/${id}`, { method: 'DELETE' })
+}
+
+export function updateTravel(
+  id: number,
+  payload: {
+    title?: string
+    location?: string
+    description?: string
+    images?: string[]
+  },
+) {
+  return request<{ ok: true; deletedFiles: number }>(`/travels/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+// ---------- 生活笔记 ----------
+export type Note = {
+  id: number
+  title: string
+  scene?: string
+  description: string
+  date: string
+  images: string[]  // 完整 URL
+}
+
+export function listNotes() {
+  return request<{ notes: Note[] }>('/notes')
+}
+
+export function createNote(payload: {
+  title: string
+  scene?: string
+  description: string
+  images: string[]
+  date?: string
+}) {
+  return request<{ id: number }>('/notes', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteNote(id: number) {
+  return request<{ ok: true }>(`/notes/${id}`, { method: 'DELETE' })
+}
+
+export function updateNote(
+  id: number,
+  payload: {
+    title?: string
+    scene?: string
+    description?: string
+    images?: string[]
+  },
+) {
+  return request<{ ok: true; deletedFiles: number }>(`/notes/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+// ---------- 工作(调试记录) ----------
+export type Work = {
+  id: number
+  title: string
+  problem?: string
+  analysis?: string
+  solution?: string
+  tags: string[]
+  date: string
+  images: string[]
+}
+
+export function listWorks() {
+  return request<{ works: Work[] }>('/works')
+}
+
+export function createWork(payload: {
+  title: string
+  problem?: string
+  analysis?: string
+  solution?: string
+  tags?: string[]
+  images: string[]
+  date?: string
+}) {
+  return request<{ id: number }>('/works', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteWork(id: number) {
+  return request<{ ok: true }>(`/works/${id}`, { method: 'DELETE' })
+}
+
+export function updateWork(
+  id: number,
+  payload: {
+    title?: string
+    problem?: string
+    analysis?: string
+    solution?: string
+    tags?: string[]
+    images?: string[]
+  },
+) {
+  return request<{ ok: true; deletedFiles: number }>(`/works/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}

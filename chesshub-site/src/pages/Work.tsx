@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import App from '../App'
 import {
-  listTravels,
-  createTravel,
-  updateTravel,
-  deleteTravel,
+  listWorks,
+  createWork,
+  updateWork,
+  deleteWork,
   uploadImage,
-  type Travel,
+  type Work,
 } from '../api'
-import { isAdmin, isGuest, ensureLoggedIn, clearAuth } from '../auth'
+import { isAdmin, ensureLoggedIn, clearAuth } from '../auth'
 
-// 待发布图片: 来源可以是已上传的 URL,或本地 File
+// 待发布图片
 type PendingImage = {
   key: string
   url?: string
@@ -18,18 +18,40 @@ type PendingImage = {
   preview: string
 }
 
-export default function TravelPage() {
-  const [travels, setTravels] = useState<Travel[]>([])
+// 把 "openwrt, 嵌入式,  Linux " 解析成 ["OpenWrt", "嵌入式", "Linux"]
+function parseTags(input: string): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const raw of input.split(/[,，]/)) {
+    const t = raw.trim()
+    if (!t) continue
+    const key = t.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    // 保留用户原始大小写(中文不受 toLowerCase 影响)
+    result.push(t)
+  }
+  return result
+}
+
+// 把数组渲染成 "OpenWrt, 嵌入式, Linux"
+function joinTags(tags: string[]): string {
+  return tags.join(', ')
+}
+
+export default function WorkPage() {
+  const [works, setWorks] = useState<Work[]>([])
   const [loading, setLoading] = useState(true)
   const [admin, setAdmin] = useState(false)
-  const [guest, setGuest] = useState(false)
 
   const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
 
   const [title, setTitle] = useState('')
-  const [location, setLocation] = useState('')
-  const [description, setDescription] = useState('')
+  const [problem, setProblem] = useState('')
+  const [analysis, setAnalysis] = useState('')
+  const [solution, setSolution] = useState('')
+  const [tagsInput, setTagsInput] = useState('')
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
 
   const [submitting, setSubmitting] = useState(false)
@@ -41,17 +63,16 @@ export default function TravelPage() {
   useEffect(() => {
     if (!ensureLoggedIn()) return
     setAdmin(isAdmin())
-    setGuest(isGuest())
-    loadTravels()
+    loadWorks()
   }, [])
 
-  async function loadTravels() {
+  async function loadWorks() {
     setLoading(true)
     try {
-      const { travels } = await listTravels()
-      setTravels(travels)
+      const { works } = await listWorks()
+      setWorks(works)
     } catch (e: any) {
-      console.error('loadTravels error:', e)
+      console.error('loadWorks error:', e)
       if (e.message?.includes('token')) {
         clearAuth()
         window.location.href = '/login.html'
@@ -68,18 +89,20 @@ export default function TravelPage() {
     setFormMode('create')
   }
 
-  function openEdit(t: Travel) {
-    setTitle(t.title)
-    setLocation(t.location || '')
-    setDescription(t.description)
+  function openEdit(w: Work) {
+    setTitle(w.title)
+    setProblem(w.problem || '')
+    setAnalysis(w.analysis || '')
+    setSolution(w.solution || '')
+    setTagsInput(joinTags(w.tags))
     setPendingImages(
-      t.images.map((url) => ({
+      w.images.map((url) => ({
         key: url,
         url,
         preview: url,
       })),
     )
-    setEditingId(t.id)
+    setEditingId(w.id)
     setFormMode('edit')
   }
 
@@ -93,20 +116,29 @@ export default function TravelPage() {
 
   function hasUnsavedChanges(): boolean {
     if (!formMode) return false
-    if (title.trim() || location.trim() || description.trim()) return true
+    if (
+      title.trim() ||
+      problem.trim() ||
+      analysis.trim() ||
+      solution.trim() ||
+      tagsInput.trim()
+    )
+      return true
     if (formMode === 'create' && pendingImages.length > 0) return true
     return false
   }
 
   function resetForm() {
     setTitle('')
-    setLocation('')
-    setDescription('')
+    setProblem('')
+    setAnalysis('')
+    setSolution('')
+    setTagsInput('')
     setPendingImages([])
     setUploadProgress({ done: 0, total: 0, currentName: '' })
   }
 
-  // ===== 图片管理 =====
+  // ===== 图片管理(同 Travel/Life) =====
   function openFilePicker() {
     if (submitting) return
     fileInputRef.current?.click()
@@ -169,8 +201,16 @@ export default function TravelPage() {
   // ===== 提交 =====
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!title.trim() || !description.trim() || pendingImages.length === 0) {
-      alert('标题、描述、图片都得填哦')
+    if (!title.trim()) {
+      alert('标题必填')
+      return
+    }
+    if (!problem.trim() && !analysis.trim() && !solution.trim()) {
+      alert('现象 / 排查 / 解决 至少写一段')
+      return
+    }
+    if (pendingImages.length === 0) {
+      alert('至少上传一张截图')
       return
     }
     if (!isAdmin()) {
@@ -202,29 +242,31 @@ export default function TravelPage() {
         return p.url!.split('/').pop()!
       })
 
+      const tags = parseTags(tagsInput)
+      const payload = {
+        title: title.trim(),
+        problem: problem.trim() || undefined,
+        analysis: analysis.trim() || undefined,
+        solution: solution.trim() || undefined,
+        tags,
+        images: finalImages,
+      }
+
       if (formMode === 'create') {
-        await createTravel({
-          title: title.trim(),
-          location: location.trim() || undefined,
-          description: description.trim(),
-          images: finalImages,
+        await createWork({
+          ...payload,
           date: new Date().toISOString().slice(0, 7).replace('-', '.'),
         })
-        alert(`发布成功!共 ${finalImages.length} 张照片`)
+        alert(`发布成功!共 ${finalImages.length} 张截图`)
       } else if (formMode === 'edit' && editingId) {
-        await updateTravel(editingId, {
-          title: title.trim(),
-          location: location.trim() || undefined,
-          description: description.trim(),
-          images: finalImages,
-        })
+        await updateWork(editingId, payload)
         alert('修改已保存!')
       }
 
       resetForm()
       setFormMode(null)
       setEditingId(null)
-      await loadTravels()
+      await loadWorks()
     } catch (err: any) {
       alert((formMode === 'edit' ? '保存失败: ' : '发布失败: ') + (err.message || err))
     } finally {
@@ -235,34 +277,34 @@ export default function TravelPage() {
 
   // ===== 列表操作 =====
   async function handleDelete(id: number) {
-    if (!confirm('确认删除这条? (图片也会一起删)')) return
+    if (!confirm('确认删除这条? (截图也会一起删)')) return
     try {
-      await deleteTravel(id)
-      await loadTravels()
+      await deleteWork(id)
+      await loadWorks()
     } catch (err: any) {
       alert('删除失败: ' + (err.message || err))
     }
   }
 
   return (
-    <App current="travel">
+    <App current="work">
       <div className="max-w-3xl mx-auto px-6 pt-12 pb-24">
         {/* 顶部介绍 */}
         <div className="text-center mb-10">
-          <p className="text-xs font-mono text-accent mb-3 tracking-widest">/ TRAVEL</p>
+          <p className="text-xs font-mono text-accent mb-3 tracking-widest">/ WORK</p>
           <h1 className="text-4xl md:text-5xl font-extrabold text-ink">
-            去过的地方<span className="text-accent">.</span>
+            工作<span className="text-accent">.</span>
           </h1>
           <p className="mt-4 text-ink-soft max-w-xl mx-auto leading-relaxed">
-            记录走过的路。
-            每条都附上时间、地点和一路的照片,慢慢写。
+            调试踩坑笔记。每条按 <span className="font-mono text-ink">现象 → 排查 → 解决</span> 三段写,
+            打 tag 方便以后翻。
           </p>
         </div>
 
         {/* 登录状态 + 操作栏 */}
         <div className="flex items-center justify-between mb-8 border-b border-ink/10 pb-4 gap-3 flex-wrap">
           <span className="text-sm text-ink-soft">
-            共 <span className="text-ink font-semibold">{travels.length}</span> 条
+            共 <span className="text-ink font-semibold">{works.length}</span> 条
             {loading && <span className="ml-2 text-xs text-ink-soft/60">加载中…</span>}
           </span>
           <div className="flex items-center gap-2">
@@ -303,7 +345,7 @@ export default function TravelPage() {
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="例:大理 · 苍山下的四天"
+                placeholder="例:OpenWrt 启动卡在 switching to clocksource tsc"
                 disabled={submitting}
                 className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 disabled:opacity-50"
               />
@@ -311,37 +353,72 @@ export default function TravelPage() {
 
             <div>
               <label className="block text-xs font-mono text-ink-soft mb-1.5 uppercase tracking-widest">
-                地点 (可选)
+                现象 / 问题
+              </label>
+              <textarea
+                value={problem}
+                onChange={(e) => setProblem(e.target.value)}
+                rows={3}
+                placeholder="看到了什么现象、报错信息、能复现吗..."
+                disabled={submitting}
+                className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 resize-none disabled:opacity-50 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-mono text-ink-soft mb-1.5 uppercase tracking-widest">
+                排查过程
+              </label>
+              <textarea
+                value={analysis}
+                onChange={(e) => setAnalysis(e.target.value)}
+                rows={5}
+                placeholder={`试过的方向、命令、查到的资料...
+例:
+1. dmesg | tail -50 → 看到 mtd partition 扫描卡住
+2. mount -t debugfs none /sys/kernel/debug → 失败
+3. ...`}
+                disabled={submitting}
+                className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 resize-none disabled:opacity-50 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-mono text-ink-soft mb-1.5 uppercase tracking-widest">
+                解决方法
+              </label>
+              <textarea
+                value={solution}
+                onChange={(e) => setSolution(e.target.value)}
+                rows={4}
+                placeholder="最终怎么搞定的,留个验证步骤..."
+                disabled={submitting}
+                className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 resize-none disabled:opacity-50 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-mono text-ink-soft mb-1.5 uppercase tracking-widest">
+                Tags (用逗号分隔)
               </label>
               <input
                 type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="例:云南 · 大理"
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+                placeholder="例:OpenWrt, 嵌入式, 启动"
                 disabled={submitting}
                 className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 disabled:opacity-50"
               />
-            </div>
-
-            <div>
-              <label className="block text-xs font-mono text-ink-soft mb-1.5 uppercase tracking-widest">
-                描述 / 心得 *
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={5}
-                placeholder="行程、吃了什么、遇到的人、有意思的细节..."
-                disabled={submitting}
-                className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 resize-none disabled:opacity-50"
-              />
+              <div className="mt-1.5 text-[11px] font-mono text-ink-soft/60">
+                // 当前解析到: {parseTags(tagsInput).length === 0 ? '(无)' : parseTags(tagsInput).map((t) => `#${t}`).join(' ')}
+              </div>
             </div>
 
             {/* 照片区 */}
             <div>
               <div className="flex items-baseline justify-between mb-1.5">
                 <label className="text-xs font-mono text-ink-soft uppercase tracking-widest">
-                  照片 * <span className="text-ink-soft/50 normal-case">(必填,单张≤5MB)</span>
+                  截图 * <span className="text-ink-soft/50 normal-case">(必填,单张≤5MB)</span>
                 </label>
                 {pendingImages.length > 0 && !submitting && (
                   <button
@@ -362,7 +439,7 @@ export default function TravelPage() {
               >
                 <div className="text-2xl group-hover:scale-110 transition">📷</div>
                 <div className="text-sm font-semibold text-ink">
-                  {pendingImages.length === 0 ? '上传图片' : '继续添加图片'}
+                  {pendingImages.length === 0 ? '上传截图' : '继续添加截图'}
                 </div>
                 <div className="text-[11px] text-ink-soft/70 font-mono">
                   // 可一次选多张 · 当前 {pendingImages.length} 张
@@ -452,7 +529,7 @@ export default function TravelPage() {
                   ? `${formMode === 'edit' ? '保存中' : '发布中'} ${uploadProgress.done}/${uploadProgress.total}`
                   : formMode === 'edit'
                     ? `💾 保存修改 (${pendingImages.length} 张)`
-                    : `📤 发布 (${pendingImages.length} 张照片)`}
+                    : `📤 发布 (${pendingImages.length} 张截图)`}
               </button>
             </div>
           </form>
@@ -461,20 +538,20 @@ export default function TravelPage() {
         {/* 列表 */}
         {loading ? (
           <div className="text-center py-20 text-ink-soft/60">加载中…</div>
-        ) : travels.length === 0 ? (
+        ) : works.length === 0 ? (
           <div className="text-center py-20 text-ink-soft/60">
             还没发布,{admin ? '点 + 发布 发上第一条吧' : '请联系管理员发布'}
           </div>
         ) : (
           <div className="space-y-12">
-            {travels.map((t) => (
-              <TravelCard
-                key={t.id}
-                travel={t}
+            {works.map((w) => (
+              <WorkCard
+                key={w.id}
+                work={w}
                 canEdit={admin}
                 canDelete={admin}
-                onEdit={() => openEdit(t)}
-                onDelete={() => handleDelete(t.id)}
+                onEdit={() => openEdit(w)}
+                onDelete={() => handleDelete(w.id)}
               />
             ))}
           </div>
@@ -488,14 +565,14 @@ export default function TravelPage() {
   )
 }
 
-function TravelCard({
-  travel,
+function WorkCard({
+  work,
   canEdit,
   canDelete,
   onEdit,
   onDelete,
 }: {
-  travel: Travel
+  work: Work
   canEdit: boolean
   canDelete: boolean
   onEdit?: () => void
@@ -503,8 +580,23 @@ function TravelCard({
 }) {
   return (
     <article className="border-l-2 border-ink/10 pl-6 hover:border-accent transition-colors">
-      <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
-        <div className="text-xs font-mono text-ink-soft/60">{travel.date}</div>
+      {/* 日期 + tags + 操作 */}
+      <div className="flex items-baseline justify-between mb-3 gap-2 flex-wrap">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="text-xs font-mono text-ink-soft/60">{work.date}</span>
+          {work.tags.length > 0 && (
+            <span className="flex flex-wrap gap-1.5">
+              {work.tags.map((t) => (
+                <span
+                  key={t}
+                  className="text-[11px] font-mono px-2 py-0.5 bg-bg-soft border border-ink/10 rounded text-ink-soft"
+                >
+                  #{t}
+                </span>
+              ))}
+            </span>
+          )}
+        </div>
         {(canEdit || canDelete) && (
           <div className="flex items-center gap-3">
             {canEdit && onEdit && (
@@ -526,16 +618,46 @@ function TravelCard({
           </div>
         )}
       </div>
-      <h2 className="text-2xl font-bold text-ink mb-1">{travel.title}</h2>
-      {travel.location && (
-        <div className="text-sm text-ink-soft/80 mb-3">📍 {travel.location}</div>
-      )}
-      <p className="text-ink-soft leading-relaxed whitespace-pre-wrap mb-4">
-        {travel.description}
-      </p>
-      {travel.images.length > 0 && (
+
+      <h2 className="text-2xl font-bold text-ink mb-4">{work.title}</h2>
+
+      {/* 三段式: 现象 / 排查 / 解决 */}
+      <div className="space-y-3 mb-4">
+        {work.problem && (
+          <div>
+            <div className="text-[11px] font-mono text-ink-soft/70 uppercase tracking-widest mb-1">
+              // 现象
+            </div>
+            <pre className="text-sm text-ink-soft whitespace-pre-wrap font-mono leading-relaxed bg-bg-soft/40 px-3 py-2 rounded border border-ink/5">
+              {work.problem}
+            </pre>
+          </div>
+        )}
+        {work.analysis && (
+          <div>
+            <div className="text-[11px] font-mono text-ink-soft/70 uppercase tracking-widest mb-1">
+              // 排查
+            </div>
+            <pre className="text-sm text-ink-soft whitespace-pre-wrap font-mono leading-relaxed bg-bg-soft/40 px-3 py-2 rounded border border-ink/5">
+              {work.analysis}
+            </pre>
+          </div>
+        )}
+        {work.solution && (
+          <div>
+            <div className="text-[11px] font-mono text-accent/80 uppercase tracking-widest mb-1">
+              // 解决
+            </div>
+            <pre className="text-sm text-ink whitespace-pre-wrap font-mono leading-relaxed bg-accent/5 px-3 py-2 rounded border border-accent/20">
+              {work.solution}
+            </pre>
+          </div>
+        )}
+      </div>
+
+      {work.images.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {travel.images.map((url, i) => (
+          {work.images.map((url, i) => (
             <a
               key={i}
               href={url}
@@ -545,7 +667,7 @@ function TravelCard({
             >
               <img
                 src={url}
-                alt={`${travel.title} ${i + 1}`}
+                alt={`${work.title} ${i + 1}`}
                 className="w-full h-auto"
                 loading="lazy"
               />

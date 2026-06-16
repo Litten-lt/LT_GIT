@@ -13,6 +13,8 @@ export default defineConfig({
         blog: resolve(__dirname, 'blog.html'),
         figures: resolve(__dirname, 'figures.html'),
         login: resolve(__dirname, 'login.html'),
+        life: resolve(__dirname, 'life.html'),
+        work: resolve(__dirname, 'work.html'),
       },
     },
   },
