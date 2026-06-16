@@ -534,14 +534,14 @@ function NoteCard({
         {note.description}
       </p>
       {note.images.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="columns-1 sm:columns-2 gap-3">
           {note.images.map((url, i) => (
             <a
               key={i}
               href={url}
               target="_blank"
               rel="noreferrer"
-              className="block rounded-2xl border border-ink/10 overflow-hidden hover:shadow-lg transition"
+              className="block mb-3 break-inside-avoid rounded-2xl border border-ink/10 overflow-hidden hover:shadow-lg transition"
             >
               <img
                 src={url}
