@@ -60,37 +60,8 @@ export default function Contact() {
         <p className="mt-3 text-ink-soft">让我们合作 · 一起折腾</p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-10">
-        {/* 左：表单 */}
-        <form
-          onSubmit={(e) => e.preventDefault()}
-          className="space-y-3 max-w-sm mx-auto w-full"
-        >
-          <input
-            type="text"
-            placeholder="姓名"
-            className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30"
-          />
-          <input
-            type="email"
-            placeholder="电子邮件"
-            className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30"
-          />
-          <textarea
-            placeholder="留言"
-            rows={5}
-            className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 resize-none"
-          />
-          <button
-            type="submit"
-            className="w-full py-2.5 text-sm font-semibold text-white bg-ink rounded-md hover:bg-ink/85 transition"
-          >
-            提交
-          </button>
-        </form>
-
-        {/* 右：直接联系方式 */}
-        <div className="space-y-5 max-w-sm mx-auto w-full">
+      <div className="max-w-sm mx-auto w-full">
+        <div className="space-y-5">
           <ContactItem
             icon={<PinIcon className="w-5 h-5 text-ink" />}
             label="位置"
