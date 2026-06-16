@@ -390,6 +390,8 @@ server {
     location /travel  { try_files \$uri /travel.html; }
     location /blog    { try_files \$uri /blog.html; }
     location /figures { try_files \$uri /figures.html; }
+    location /life    { try_files \$uri /life.html; }
+    location /work    { try_files \$uri /work.html; }
 
     access_log /var/log/nginx/chesshub.access.log;
     error_log  /var/log/nginx/chesshub.error.log;

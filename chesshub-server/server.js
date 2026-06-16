@@ -45,6 +45,41 @@ db.exec(`
     created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
   CREATE INDEX IF NOT EXISTS idx_figures_created ON figures(created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS travels (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    location    TEXT,
+    description TEXT NOT NULL,
+    images      TEXT NOT NULL,    -- JSON 数组,存文件名
+    date        TEXT NOT NULL,
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_travels_created ON travels(created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    scene       TEXT,
+    description TEXT NOT NULL,
+    images      TEXT NOT NULL,    -- JSON 数组,存文件名
+    date        TEXT NOT NULL,
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS works (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    problem     TEXT,             -- 现象/问题
+    analysis    TEXT,             -- 排查过程
+    solution    TEXT,             -- 解决方法
+    tags        TEXT NOT NULL DEFAULT '[]',  -- JSON 数组,如 ["OpenWrt","Linux"]
+    images      TEXT NOT NULL,    -- JSON 数组,存文件名
+    date        TEXT NOT NULL,
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_works_created ON works(created_at DESC);
 `)
 
 const app = express()
@@ -242,6 +277,325 @@ app.put('/api/figures/:id', requireAuth, (req, res) => {
   res.json({ ok: true, deletedFiles: imagesToDelete.length })
 })
 
+// 列出所有 travel (公开)
+app.get('/api/travels', (req, res) => {
+  const rows = db.prepare(`
+    SELECT id, title, location, description, images, date, created_at
+    FROM travels
+    ORDER BY created_at DESC
+  `).all()
+
+  const travels = rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    location: r.location || undefined,
+    description: r.description,
+    date: r.date,
+    images: JSON.parse(r.images).map((fn) => `${PUBLIC_BASE_URL}/data/figures/${fn}`),
+  }))
+  res.json({ travels })
+})
+
+// 新建 travel (admin)
+app.post('/api/travels', requireAuth, (req, res) => {
+  const { title, location, description, images, date } = req.body || {}
+  if (!title || !description || !Array.isArray(images) || images.length === 0) {
+    return res.status(400).json({ error: 'title, description, images 必填' })
+  }
+
+  const result = db.prepare(`
+    INSERT INTO travels (title, location, description, images, date)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    title.trim(),
+    location?.trim() || null,
+    description.trim(),
+    JSON.stringify(images),
+    date || new Date().toISOString().slice(0, 7).replace('-', '.'),
+  )
+
+  res.json({ id: result.lastInsertRowid })
+})
+
+// 删除 travel (admin)
+app.delete('/api/travels/:id', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const row = db.prepare('SELECT images FROM travels WHERE id = ?').get(id)
+  if (!row) return res.status(404).json({ error: '记录不存在' })
+
+  db.prepare('DELETE FROM travels WHERE id = ?').run(id)
+
+  const images = JSON.parse(row.images)
+  for (const fn of images) {
+    const fp = path.join(UPLOAD_DIR, fn)
+    fs.unlink(fp, () => {})
+  }
+  res.json({ ok: true })
+})
+
+// 更新 travel (admin) - 局部更新,只改提供的字段
+// body 可包含: title?, location?, description?, images?: string[]
+app.put('/api/travels/:id', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const row = db.prepare('SELECT images FROM travels WHERE id = ?').get(id)
+  if (!row) return res.status(404).json({ error: '记录不存在' })
+
+  const { title, location, description, images } = req.body || {}
+  const oldImages = JSON.parse(row.images)
+
+  if (title !== undefined && !title.trim()) {
+    return res.status(400).json({ error: '标题不能为空' })
+  }
+  if (description !== undefined && !description.trim()) {
+    return res.status(400).json({ error: '描述不能为空' })
+  }
+  if (images !== undefined && (!Array.isArray(images) || images.length === 0)) {
+    return res.status(400).json({ error: 'images 必须是非空数组' })
+  }
+
+  let imagesToDelete = []
+  if (images !== undefined) {
+    const newSet = new Set(images)
+    imagesToDelete = oldImages.filter((fn) => !newSet.has(fn))
+  }
+
+  const sets = []
+  const args = []
+  if (title !== undefined) { sets.push('title = ?'); args.push(title.trim()) }
+  if (location !== undefined) { sets.push('location = ?'); args.push(location.trim() || null) }
+  if (description !== undefined) { sets.push('description = ?'); args.push(description.trim()) }
+  if (images !== undefined) { sets.push('images = ?'); args.push(JSON.stringify(images)) }
+
+  if (sets.length === 0) {
+    return res.status(400).json({ error: '没有要更新的字段' })
+  }
+
+  args.push(id)
+  db.prepare(`UPDATE travels SET ${sets.join(', ')} WHERE id = ?`).run(...args)
+
+  for (const fn of imagesToDelete) {
+    const fp = path.join(UPLOAD_DIR, fn)
+    fs.unlink(fp, () => {})
+  }
+
+  res.json({ ok: true, deletedFiles: imagesToDelete.length })
+})
+
+// 列出所有 note (公开)
+app.get('/api/notes', (req, res) => {
+  const rows = db.prepare(`
+    SELECT id, title, scene, description, images, date, created_at
+    FROM notes
+    ORDER BY created_at DESC
+  `).all()
+
+  const notes = rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    scene: r.scene || undefined,
+    description: r.description,
+    date: r.date,
+    images: JSON.parse(r.images).map((fn) => `${PUBLIC_BASE_URL}/data/figures/${fn}`),
+  }))
+  res.json({ notes })
+})
+
+// 新建 note (admin)
+app.post('/api/notes', requireAuth, (req, res) => {
+  const { title, scene, description, images, date } = req.body || {}
+  if (!title || !description || !Array.isArray(images) || images.length === 0) {
+    return res.status(400).json({ error: 'title, description, images 必填' })
+  }
+
+  const result = db.prepare(`
+    INSERT INTO notes (title, scene, description, images, date)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    title.trim(),
+    scene?.trim() || null,
+    description.trim(),
+    JSON.stringify(images),
+    date || new Date().toISOString().slice(0, 7).replace('-', '.'),
+  )
+
+  res.json({ id: result.lastInsertRowid })
+})
+
+// 删除 note (admin)
+app.delete('/api/notes/:id', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const row = db.prepare('SELECT images FROM notes WHERE id = ?').get(id)
+  if (!row) return res.status(404).json({ error: '记录不存在' })
+
+  db.prepare('DELETE FROM notes WHERE id = ?').run(id)
+
+  const images = JSON.parse(row.images)
+  for (const fn of images) {
+    const fp = path.join(UPLOAD_DIR, fn)
+    fs.unlink(fp, () => {})
+  }
+  res.json({ ok: true })
+})
+
+// 更新 note (admin) - 局部更新,只改提供的字段
+// body 可包含: title?, scene?, description?, images?: string[]
+app.put('/api/notes/:id', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const row = db.prepare('SELECT images FROM notes WHERE id = ?').get(id)
+  if (!row) return res.status(404).json({ error: '记录不存在' })
+
+  const { title, scene, description, images } = req.body || {}
+  const oldImages = JSON.parse(row.images)
+
+  if (title !== undefined && !title.trim()) {
+    return res.status(400).json({ error: '标题不能为空' })
+  }
+  if (description !== undefined && !description.trim()) {
+    return res.status(400).json({ error: '描述不能为空' })
+  }
+  if (images !== undefined && (!Array.isArray(images) || images.length === 0)) {
+    return res.status(400).json({ error: 'images 必须是非空数组' })
+  }
+
+  let imagesToDelete = []
+  if (images !== undefined) {
+    const newSet = new Set(images)
+    imagesToDelete = oldImages.filter((fn) => !newSet.has(fn))
+  }
+
+  const sets = []
+  const args = []
+  if (title !== undefined) { sets.push('title = ?'); args.push(title.trim()) }
+  if (scene !== undefined) { sets.push('scene = ?'); args.push(scene.trim() || null) }
+  if (description !== undefined) { sets.push('description = ?'); args.push(description.trim()) }
+  if (images !== undefined) { sets.push('images = ?'); args.push(JSON.stringify(images)) }
+
+  if (sets.length === 0) {
+    return res.status(400).json({ error: '没有要更新的字段' })
+  }
+
+  args.push(id)
+  db.prepare(`UPDATE notes SET ${sets.join(', ')} WHERE id = ?`).run(...args)
+
+  for (const fn of imagesToDelete) {
+    const fp = path.join(UPLOAD_DIR, fn)
+    fs.unlink(fp, () => {})
+  }
+
+  res.json({ ok: true, deletedFiles: imagesToDelete.length })
+})
+
+// 列出所有 work (公开) - 调试记录
+app.get('/api/works', (req, res) => {
+  const rows = db.prepare(`
+    SELECT id, title, problem, analysis, solution, tags, images, date, created_at
+    FROM works
+    ORDER BY created_at DESC
+  `).all()
+
+  const works = rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    problem: r.problem || undefined,
+    analysis: r.analysis || undefined,
+    solution: r.solution || undefined,
+    tags: JSON.parse(r.tags),
+    date: r.date,
+    images: JSON.parse(r.images).map((fn) => `${PUBLIC_BASE_URL}/data/figures/${fn}`),
+  }))
+  res.json({ works })
+})
+
+// 新建 work (admin)
+app.post('/api/works', requireAuth, (req, res) => {
+  const { title, problem, analysis, solution, tags, images, date } = req.body || {}
+  if (!title || !Array.isArray(images) || images.length === 0) {
+    return res.status(400).json({ error: 'title、images 必填' })
+  }
+  // problem/analysis/solution 至少一个非空
+  if (!problem?.trim() && !analysis?.trim() && !solution?.trim()) {
+    return res.status(400).json({ error: '现象 / 排查 / 解决 至少写一段' })
+  }
+
+  const result = db.prepare(`
+    INSERT INTO works (title, problem, analysis, solution, tags, images, date)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    title.trim(),
+    problem?.trim() || null,
+    analysis?.trim() || null,
+    solution?.trim() || null,
+    JSON.stringify(Array.isArray(tags) ? tags : []),
+    JSON.stringify(images),
+    date || new Date().toISOString().slice(0, 7).replace('-', '.'),
+  )
+
+  res.json({ id: result.lastInsertRowid })
+})
+
+// 删除 work (admin)
+app.delete('/api/works/:id', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const row = db.prepare('SELECT images FROM works WHERE id = ?').get(id)
+  if (!row) return res.status(404).json({ error: '记录不存在' })
+
+  db.prepare('DELETE FROM works WHERE id = ?').run(id)
+
+  const images = JSON.parse(row.images)
+  for (const fn of images) {
+    const fp = path.join(UPLOAD_DIR, fn)
+    fs.unlink(fp, () => {})
+  }
+  res.json({ ok: true })
+})
+
+// 更新 work (admin) - 局部更新
+// body 可包含: title?, problem?, analysis?, solution?, tags?: string[], images?: string[]
+app.put('/api/works/:id', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const row = db.prepare('SELECT images FROM works WHERE id = ?').get(id)
+  if (!row) return res.status(404).json({ error: '记录不存在' })
+
+  const { title, problem, analysis, solution, tags, images } = req.body || {}
+  const oldImages = JSON.parse(row.images)
+
+  if (title !== undefined && !title.trim()) {
+    return res.status(400).json({ error: '标题不能为空' })
+  }
+  if (images !== undefined && (!Array.isArray(images) || images.length === 0)) {
+    return res.status(400).json({ error: 'images 必须是非空数组' })
+  }
+
+  let imagesToDelete = []
+  if (images !== undefined) {
+    const newSet = new Set(images)
+    imagesToDelete = oldImages.filter((fn) => !newSet.has(fn))
+  }
+
+  const sets = []
+  const args = []
+  if (title !== undefined) { sets.push('title = ?'); args.push(title.trim()) }
+  if (problem !== undefined) { sets.push('problem = ?'); args.push(problem?.trim() || null) }
+  if (analysis !== undefined) { sets.push('analysis = ?'); args.push(analysis?.trim() || null) }
+  if (solution !== undefined) { sets.push('solution = ?'); args.push(solution?.trim() || null) }
+  if (tags !== undefined) { sets.push('tags = ?'); args.push(JSON.stringify(Array.isArray(tags) ? tags : [])) }
+  if (images !== undefined) { sets.push('images = ?'); args.push(JSON.stringify(images)) }
+
+  if (sets.length === 0) {
+    return res.status(400).json({ error: '没有要更新的字段' })
+  }
+
+  args.push(id)
+  db.prepare(`UPDATE works SET ${sets.join(', ')} WHERE id = ?`).run(...args)
+
+  for (const fn of imagesToDelete) {
+    const fp = path.join(UPLOAD_DIR, fn)
+    fs.unlink(fp, () => {})
+  }
+
+  res.json({ ok: true, deletedFiles: imagesToDelete.length })
+})
+
 // 上传图片 (admin) - 接收 multipart/form-data, 字段名 'file'
 // 返回 { url, filename }
 app.post('/api/upload', requireAuth, (req, res) => {
@@ -314,4 +668,65 @@ app.listen(PORT, '127.0.0.1', () => {
   console.log(`[chesshub-server] upload dir: ${UPLOAD_DIR}`)
   console.log(`[chesshub-server] data dir:   ${DATA_DIR}`)
   seedIfEmpty()
+  seedTravelIfEmpty()
+  seedNoteIfEmpty()
+  seedWorkIfEmpty()
 })
+
+// ---------- seed travels / notes ----------
+
+function seedTravelIfEmpty() {
+  const count = db.prepare('SELECT COUNT(*) AS n FROM travels').get().n
+  if (count > 0) return
+
+  db.prepare(`
+    INSERT INTO travels (title, location, description, images, date)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    '示例旅行 · 大理',
+    '云南 · 大理',
+    '苍山洱海,风很慢。点进来这条等之后你写入真实旅行记录时会被替换。',
+    JSON.stringify([]),
+    '2025.10',
+  )
+  console.log('[seed] 插入示例旅行: 大理')
+}
+
+function seedNoteIfEmpty() {
+  const count = db.prepare('SELECT COUNT(*) AS n FROM notes').get().n
+  if (count > 0) return
+
+  db.prepare(`
+    INSERT INTO notes (title, scene, description, images, date)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    '示例生活 · 周末咖啡',
+    '深圳 · 家里',
+    '新到的豆子终于养到合适的日子,做一杯慢慢喝,听着外面雨声发一下午呆。',
+    JSON.stringify([]),
+    '2026.05',
+  )
+  console.log('[seed] 插入示例笔记: 周末咖啡')
+}
+
+function seedWorkIfEmpty() {
+  const count = db.prepare('SELECT COUNT(*) AS n FROM works').get().n
+  if (count > 0) return
+
+  db.prepare(`
+    INSERT INTO works (title, problem, analysis, solution, tags, images, date)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'OpenWrt 调试踩坑 · 启动卡住',
+    '设备上电后启动卡在 "switching to clocksource tsc",要等 30 秒才进 shell。',
+    `试过几个常见方向:
+1. 关掉 watchdog - 没效果
+2. 改 console 输出到 earlycon - 没看到额外信息
+3. 看 dmesg 完整日志,发现是 mtd partition 扫描卡住`,
+    '把 rootfs 从 squashfs 换成 ext4 + 不挂载 debug 分区,启动时间从 30s 降到 4s。',
+    JSON.stringify(['OpenWrt', '嵌入式', '启动']),
+    JSON.stringify([]),
+    '2026.04',
+  )
+  console.log('[seed] 插入示例 work: OpenWrt 启动卡住')
+}
