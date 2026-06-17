@@ -167,12 +167,16 @@ deploy_backend() {
   fi
 
   # 清空 + 解包
-  # 重要:rm 会清掉脚本自身,所以提前确认有备份
+  # 重要:rm 会清掉脚本自身,先备份(仅当 BAK 还没有时,避免覆盖较新的备份)
   [ -f "$SCRIPT_BAK" ] || cp "$SCRIPT_PATH" "$SCRIPT_BAK" 2>/dev/null || true
   rm -rf "$BACKEND_ROOT"/*
   tar -xzf "$SERVER_TAR" -C "$BACKEND_ROOT/"
-  # 恢复脚本自身
-  [ -f "$SCRIPT_BAK" ] && cp "$SCRIPT_BAK" "$SCRIPT_PATH" && chmod +x "$SCRIPT_PATH" && ok "脚本已自恢复"
+  # 恢复脚本自身: 仅当 tar 包没带 deploy.sh 时 (SCRIPT_PATH 缺失),否则保留新版
+  if [ ! -f "$SCRIPT_PATH" ] && [ -f "$SCRIPT_BAK" ]; then
+    cp "$SCRIPT_BAK" "$SCRIPT_PATH"
+    chmod +x "$SCRIPT_PATH"
+    ok "脚本已自恢复 (tar 包未包含 deploy.sh)"
+  fi
   ok "源码已解包"
 
   # 装依赖
@@ -239,14 +243,15 @@ backup_uploads() {
 check_orphans() {
   if [ ! -d "$UPLOAD_DIR" ]; then return; fi
 
-  # 从数据库取所有 images 字段拼成一个 Set
+  # 从数据库取所有 images 字段拼成一个 Set (figures + travels + notes + works 全部)
   local db_files=$(node -e "
     const Database = require('better-sqlite3');
     const db = new Database('$BACKEND_ROOT/data/chesshub.db', { readonly: true });
-    const rows = db.prepare('SELECT images FROM figures').all();
     const set = new Set();
-    for (const r of rows) {
-      try { JSON.parse(r.images).forEach(f => set.add(f)); } catch {}
+    for (const t of ['figures','travels','notes','works']) {
+      for (const r of db.prepare('SELECT images FROM ' + t).all()) {
+        try { JSON.parse(r.images).forEach(f => set.add(f)); } catch {}
+      }
     }
     console.log([...set].join('\n'));
   " 2>/dev/null)
@@ -285,10 +290,11 @@ clean_orphans() {
   local db_files=$(node -e "
     const Database = require('better-sqlite3');
     const db = new Database('$BACKEND_ROOT/data/chesshub.db', { readonly: true });
-    const rows = db.prepare('SELECT images FROM figures').all();
     const set = new Set();
-    for (const r of rows) {
-      try { JSON.parse(r.images).forEach(f => set.add(f)); } catch {}
+    for (const t of ['figures','travels','notes','works']) {
+      for (const r of db.prepare('SELECT images FROM ' + t).all()) {
+        try { JSON.parse(r.images).forEach(f => set.add(f)); } catch {}
+      }
     }
     console.log([...set].join('\n'));
   " 2>/dev/null)

@@ -11,6 +11,8 @@ import Database from 'better-sqlite3'
 import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
+import os from 'node:os'
+import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 // ---------- 配置 ----------
@@ -772,6 +774,180 @@ app.delete('/api/settings/about-photo', requireAuth, (req, res) => {
   } catch {}
   db.prepare('DELETE FROM settings WHERE key = ?').run('about_photo')
   res.json({ ok: true })
+})
+
+// ---------- Usage & Admin (admin) ----------
+
+// 拿 DB 引用文件集合 (figures/travels/notes/works)
+function getDbReferencedFiles() {
+  const set = new Set()
+  for (const t of ['figures', 'travels', 'notes', 'works']) {
+    for (const r of db.prepare('SELECT images FROM ' + t).all()) {
+      try {
+        JSON.parse(r.images).forEach((f) => set.add(f))
+      } catch {}
+    }
+  }
+  return set
+}
+
+// 扫 UPLOAD_DIR,排除 hero-/about- 前缀,返回孤儿清单
+function scanOrphans() {
+  const dbFiles = getDbReferencedFiles()
+  const orphans = []
+  let totalBytes = 0
+  if (!fs.existsSync(UPLOAD_DIR)) return { count: 0, bytes: 0, files: [] }
+  for (const f of fs.readdirSync(UPLOAD_DIR)) {
+    if (f.startsWith('hero-') || f.startsWith('about-')) continue
+    if (!/\.(jpe?g|png|webp|gif)$/i.test(f)) continue
+    if (!dbFiles.has(f)) {
+      try {
+        const s = fs.statSync(path.join(UPLOAD_DIR, f))
+        orphans.push({ filename: f, bytes: s.size })
+        totalBytes += s.size
+      } catch {}
+    }
+  }
+  return { count: orphans.length, bytes: totalBytes, files: orphans }
+}
+
+// GET /api/admin/usage - admin
+// 返回 { disk, memory, upload_dir, orphans, db, process, server_time }
+app.get('/api/admin/usage', requireAuth, (req, res) => {
+  try {
+    const result = { server_time: new Date().toISOString() }
+
+    // RAM
+    const totalMem = os.totalmem()
+    const freeMem = os.freemem()
+    result.memory = {
+      total_bytes: totalMem,
+      free_bytes: freeMem,
+      used_bytes: totalMem - freeMem,
+      use_percent: Math.round(((totalMem - freeMem) / totalMem) * 100),
+    }
+
+    // Disk (整个 /)
+    try {
+      const dfOut = execSync('df -B1 / 2>/dev/null | tail -1', { timeout: 5000 })
+        .toString()
+        .trim()
+        .split(/\s+/)
+      const total = parseInt(dfOut[1])
+      const used = parseInt(dfOut[2])
+      const free = parseInt(dfOut[3])
+      const usePercent = parseInt(dfOut[4])
+      result.disk = {
+        mount: '/',
+        total_bytes: total,
+        used_bytes: used,
+        free_bytes: free,
+        use_percent: usePercent,
+      }
+    } catch (e) {
+      result.disk = { error: e.message }
+    }
+
+    // UPLOAD_DIR 统计
+    try {
+      const files = fs
+        .readdirSync(UPLOAD_DIR)
+        .filter((f) => !f.startsWith('.'))
+      let totalBytes = 0
+      const byPrefix = {}
+      for (const f of files) {
+        const s = fs.statSync(path.join(UPLOAD_DIR, f))
+        if (!s.isFile()) continue
+        totalBytes += s.size
+        // 分类: hero- / about- 是显式前缀, 其他时间戳开头的归为 "业务"
+        let prefix
+        if (f.startsWith('hero-')) prefix = 'hero-'
+        else if (f.startsWith('about-')) prefix = 'about-'
+        else if (/^\d+-/.test(f)) prefix = '(业务)'
+        else prefix = '(no-prefix)'
+        byPrefix[prefix] = (byPrefix[prefix] || 0) + 1
+      }
+      result.upload_dir = {
+        path: UPLOAD_DIR,
+        file_count: files.length,
+        bytes: totalBytes,
+        by_prefix: byPrefix,
+      }
+    } catch (e) {
+      result.upload_dir = { error: e.message }
+    }
+
+    // 孤儿
+    result.orphans = scanOrphans()
+
+    // DB
+    try {
+      const dbPath = path.join(DATA_DIR, 'chesshub.db')
+      const dbStat = fs.statSync(dbPath)
+      const walPath = dbPath + '-wal'
+      const walStat = fs.existsSync(walPath) ? fs.statSync(walPath) : { size: 0 }
+      const tables = {}
+      for (const t of ['figures', 'travels', 'notes', 'works', 'settings']) {
+        try {
+          tables[t] = db.prepare('SELECT COUNT(*) AS n FROM ' + t).get().n
+        } catch {
+          tables[t] = 0
+        }
+      }
+      result.db = {
+        path: dbPath,
+        db_bytes: dbStat.size,
+        wal_bytes: walStat.size,
+        tables,
+      }
+    } catch (e) {
+      result.db = { error: e.message }
+    }
+
+    // Process
+    const mu = process.memoryUsage()
+    result.process = {
+      pid: process.pid,
+      uptime_sec: Math.floor(process.uptime()),
+      rss_bytes: mu.rss,
+      heap_used_bytes: mu.heapUsed,
+      heap_total_bytes: mu.heapTotal,
+      node_version: process.version,
+    }
+
+    res.json(result)
+  } catch (e) {
+    console.error('[usage]', e)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// POST /api/admin/orphans/clean - admin (一键清孤儿, 不需 SSH 登录)
+app.post('/api/admin/orphans/clean', requireAuth, (req, res) => {
+  try {
+    const orphans = scanOrphans()
+    let deletedCount = 0
+    let deletedBytes = 0
+    const deletedFiles = []
+    for (const o of orphans.files) {
+      try {
+        fs.unlinkSync(path.join(UPLOAD_DIR, o.filename))
+        deletedCount++
+        deletedBytes += o.bytes
+        deletedFiles.push(o.filename)
+      } catch (e) {
+        console.warn('[orphans/clean] 删文件失败:', o.filename, e.message)
+      }
+    }
+    res.json({
+      deleted_count: deletedCount,
+      deleted_bytes: deletedBytes,
+      deleted_files: deletedFiles,
+    })
+  } catch (e) {
+    console.error('[orphans/clean]', e)
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ---------- 上传 (通用,admin) ----------

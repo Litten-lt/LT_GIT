@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { isLoggedIn, getRole, getUsername, clearAuth } from './auth'
 import { useHeroBg } from './heroBgContext'
 import BackgroundPicker from './components/BackgroundPicker'
+import UsagePanel from './components/UsagePanel'
 
 type Props = {
   current?: 'home' | 'travel' | 'blog' | 'figures' | 'life' | 'work'
@@ -11,6 +12,7 @@ type Props = {
 export default function App({ current = 'home', children }: Props) {
   const [time, setTime] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [usageOpen, setUsageOpen] = useState(false)
   const { heroBg, setHeroBg } = useHeroBg()
 
   useEffect(() => {
@@ -67,14 +69,24 @@ export default function App({ current = 'home', children }: Props) {
               {isAdmin ? '✓ Admin' : '👀 游客'}
             </span>
             {isAdmin && (
-              <button
-                onClick={() => setPickerOpen(true)}
-                className="w-7 h-7 flex items-center justify-center rounded-full bg-ink/5 hover:bg-accent-soft hover:text-accent transition text-base"
-                title="更换 Hero 背景"
-                aria-label="更换 Hero 背景"
-              >
-                🎨
-              </button>
+              <>
+                <button
+                  onClick={() => setPickerOpen(true)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-ink/5 hover:bg-accent-soft hover:text-accent transition text-base"
+                  title="更换 Hero 背景"
+                  aria-label="更换 Hero 背景"
+                >
+                  🎨
+                </button>
+                <button
+                  onClick={() => setUsageOpen(true)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-ink/5 hover:bg-accent-soft hover:text-accent transition text-base"
+                  title="系统用量"
+                  aria-label="系统用量"
+                >
+                  📊
+                </button>
+              </>
             )}
             <span className="text-ink-soft hidden sm:inline">{username}</span>
             <span className="font-mono text-ink-soft/60 hidden md:inline">{time}</span>
@@ -107,6 +119,7 @@ export default function App({ current = 'home', children }: Props) {
         onClose={() => setPickerOpen(false)}
         onChange={setHeroBg}
       />
+      <UsagePanel open={usageOpen} onClose={() => setUsageOpen(false)} />
     </div>
   )
 }
