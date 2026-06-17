@@ -705,6 +705,75 @@ app.delete('/api/settings/hero-bg', requireAuth, (req, res) => {
   res.json({ ok: true })
 })
 
+// ---------- About 照片 ----------
+// 复用 UPLOAD_DIR 存图, 靠 about- 前缀区分
+// 只保留一张, 上传时自动清旧的
+
+// GET /api/settings/about-photo - 任何人可读
+app.get('/api/settings/about-photo', (req, res) => {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('about_photo')
+  if (!row) return res.json({})
+  try {
+    const parsed = JSON.parse(row.value)
+    if (parsed && parsed.filename) {
+      const fp = path.join(UPLOAD_DIR, parsed.filename)
+      if (!fs.existsSync(fp)) return res.json({})
+      return res.json({ url: `${PUBLIC_BASE_URL}/data/figures/${parsed.filename}` })
+    }
+    return res.json({})
+  } catch {
+    return res.json({})
+  }
+})
+
+// POST /api/settings/about-photo/upload - admin
+app.post('/api/settings/about-photo/upload', requireAuth, (req, res) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || '上传失败' })
+    if (!req.file) return res.status(400).json({ error: '没有文件' })
+
+    // 给上传的文件加 about- 前缀
+    const newName = `about-${req.file.filename}`
+    const oldPath = req.file.path
+    const newPath = path.join(UPLOAD_DIR, newName)
+    try {
+      fs.renameSync(oldPath, newPath)
+    } catch (e) {
+      return res.status(500).json({ error: '文件移动失败: ' + e.message })
+    }
+
+    // 清理旧的 about- 图 (只保留一张最新的)
+    try {
+      const files = fs.readdirSync(UPLOAD_DIR).filter(
+        (f) => f.startsWith('about-') && f !== newName
+      )
+      for (const f of files) {
+        fs.unlinkSync(path.join(UPLOAD_DIR, f))
+      }
+    } catch (e) {
+      console.warn('[about-photo] 清理旧 about 图失败:', e.message)
+    }
+
+    upsertSetting('about_photo', { filename: newName })
+    res.json({
+      ok: true,
+      url: `${PUBLIC_BASE_URL}/data/figures/${newName}`,
+    })
+  })
+})
+
+// DELETE /api/settings/about-photo - admin (重置默认)
+app.delete('/api/settings/about-photo', requireAuth, (req, res) => {
+  try {
+    const files = fs.readdirSync(UPLOAD_DIR).filter((f) => f.startsWith('about-'))
+    for (const f of files) {
+      fs.unlinkSync(path.join(UPLOAD_DIR, f))
+    }
+  } catch {}
+  db.prepare('DELETE FROM settings WHERE key = ?').run('about_photo')
+  res.json({ ok: true })
+})
+
 // ---------- 上传 (通用,admin) ----------
 
 // 上传图片 (admin) - 接收 multipart/form-data, 字段名 'file'

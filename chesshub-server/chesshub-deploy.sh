@@ -251,12 +251,13 @@ check_orphans() {
     console.log([...set].join('\n'));
   " 2>/dev/null)
 
-  # 扫 UPLOAD_DIR 里所有文件,对比 (排除 hero- 前缀的 Hero 背景图)
+  # 扫 UPLOAD_DIR 里所有文件,对比 (排除 hero- / about- 前缀的 Hero 背景图和 About 照片)
   local orphans=()
   while IFS= read -r f; do
     local basename=$(basename "$f")
-    # Hero 背景图不算孤儿
+    # Hero 背景图 / About 照片不算孤儿
     [[ "$basename" == hero-* ]] && continue
+    [[ "$basename" == about-* ]] && continue
     if ! echo "$db_files" | grep -qx "$basename"; then
       orphans+=("$f")
     fi
@@ -295,8 +296,9 @@ clean_orphans() {
   local orphans=()
   while IFS= read -r f; do
     local basename=$(basename "$f")
-    # Hero 背景图不算孤儿
+    # Hero 背景图 / About 照片不算孤儿
     [[ "$basename" == hero-* ]] && continue
+    [[ "$basename" == about-* ]] && continue
     if ! echo "$db_files" | grep -qx "$basename"; then
       orphans+=("$f")
     fi
