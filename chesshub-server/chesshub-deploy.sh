@@ -251,14 +251,16 @@ check_orphans() {
     console.log([...set].join('\n'));
   " 2>/dev/null)
 
-  # 扫 UPLOAD_DIR 里所有文件,对比
+  # 扫 UPLOAD_DIR 里所有文件,对比 (排除 hero- 前缀的 Hero 背景图)
   local orphans=()
   while IFS= read -r f; do
     local basename=$(basename "$f")
+    # Hero 背景图不算孤儿
+    [[ "$basename" == hero-* ]] && continue
     if ! echo "$db_files" | grep -qx "$basename"; then
       orphans+=("$f")
     fi
-  done < <(find "$UPLOAD_DIR" -type f -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" 2>/dev/null)
+  done < <(find "$UPLOAD_DIR" -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" \) 2>/dev/null)
 
   if [ ${#orphans[@]} -eq 0 ]; then
     ok "无孤儿文件 (上传目录与数据库一致)"
@@ -293,6 +295,8 @@ clean_orphans() {
   local orphans=()
   while IFS= read -r f; do
     local basename=$(basename "$f")
+    # Hero 背景图不算孤儿
+    [[ "$basename" == hero-* ]] && continue
     if ! echo "$db_files" | grep -qx "$basename"; then
       orphans+=("$f")
     fi

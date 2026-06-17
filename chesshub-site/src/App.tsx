@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { isLoggedIn, getRole, getUsername, clearAuth } from './auth'
+import { useHeroBg } from './heroBgContext'
+import BackgroundPicker from './components/BackgroundPicker'
 
 type Props = {
   current?: 'home' | 'travel' | 'blog' | 'figures' | 'life' | 'work'
@@ -8,6 +10,8 @@ type Props = {
 
 export default function App({ current = 'home', children }: Props) {
   const [time, setTime] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const { heroBg, setHeroBg } = useHeroBg()
 
   useEffect(() => {
     const tick = () => {
@@ -62,6 +66,16 @@ export default function App({ current = 'home', children }: Props) {
             >
               {isAdmin ? '✓ Admin' : '👀 游客'}
             </span>
+            {isAdmin && (
+              <button
+                onClick={() => setPickerOpen(true)}
+                className="w-7 h-7 flex items-center justify-center rounded-full bg-ink/5 hover:bg-accent-soft hover:text-accent transition text-base"
+                title="更换 Hero 背景"
+                aria-label="更换 Hero 背景"
+              >
+                🎨
+              </button>
+            )}
             <span className="text-ink-soft hidden sm:inline">{username}</span>
             <span className="font-mono text-ink-soft/60 hidden md:inline">{time}</span>
             <button
@@ -86,6 +100,13 @@ export default function App({ current = 'home', children }: Props) {
           © 2026 LongTeng · built with <span className="text-accent">♥</span>
         </div>
       </footer>
+
+      <BackgroundPicker
+        open={pickerOpen}
+        current={heroBg}
+        onClose={() => setPickerOpen(false)}
+        onChange={setHeroBg}
+      />
     </div>
   )
 }

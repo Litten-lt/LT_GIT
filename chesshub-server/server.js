@@ -80,6 +80,13 @@ db.exec(`
     created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
   CREATE INDEX IF NOT EXISTS idx_works_created ON works(created_at DESC);
+
+  -- 全局设置 KV 表 (Hero 背景等)
+  CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
 `)
 
 const app = express()
@@ -595,6 +602,110 @@ app.put('/api/works/:id', requireAuth, (req, res) => {
 
   res.json({ ok: true, deletedFiles: imagesToDelete.length })
 })
+
+// ---------- Hero 背景设置 ----------
+// 复用 UPLOAD_DIR 存图 (与 figures 同目录),靠 hero- 前缀区分
+// URL 仍是 ${PUBLIC_BASE_URL}/data/figures/${filename},前端加 hero- 前缀过滤
+
+const DEFAULT_HERO_BG = { type: 'color', value: '#ebe4d8' }
+
+function upsertSetting(key, valueObj) {
+  db.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES (?, ?, strftime('%s','now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(key, JSON.stringify(valueObj))
+}
+
+// GET /api/settings/hero-bg - 任何人可读
+app.get('/api/settings/hero-bg', (req, res) => {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('hero_bg')
+  if (!row) return res.json(DEFAULT_HERO_BG)
+  try {
+    const parsed = JSON.parse(row.value)
+    // 如果是 image 但文件已经被删了,降级为默认
+    if (parsed.type === 'image') {
+      const fp = path.join(UPLOAD_DIR, parsed.value)
+      if (!fs.existsSync(fp)) return res.json(DEFAULT_HERO_BG)
+      // 把绝对路径 url 一起返回,前端可以直接用
+      parsed.url = `${PUBLIC_BASE_URL}/data/figures/${parsed.value}`
+    }
+    return res.json(parsed)
+  } catch {
+    return res.json(DEFAULT_HERO_BG)
+  }
+})
+
+// PUT /api/settings/hero-bg - admin (改预设: color / gradient)
+app.put('/api/settings/hero-bg', requireAuth, (req, res) => {
+  const { type, value } = req.body || {}
+  if (!['color', 'gradient'].includes(type)) {
+    return res.status(400).json({ error: 'type 必须是 color 或 gradient' })
+  }
+  const v = typeof value === 'string' ? value.trim() : ''
+  if (!v) return res.status(400).json({ error: 'value 必填' })
+  // 白名单防止 css 注入
+  if (type === 'color' && !/^#[0-9a-fA-F]{3,8}$/.test(v)) {
+    return res.status(400).json({ error: 'color 必须是 #hex 格式' })
+  }
+  if (type === 'gradient' && !/^(linear|radial)-gradient\(/.test(v)) {
+    return res.status(400).json({ error: 'gradient 必须是 linear-gradient(...) 或 radial-gradient(...)' })
+  }
+  upsertSetting('hero_bg', { type, value: v })
+  res.json({ ok: true, type, value: v })
+})
+
+// POST /api/settings/hero-bg/upload - admin (上传图片做背景)
+app.post('/api/settings/hero-bg/upload', requireAuth, (req, res) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || '上传失败' })
+    if (!req.file) return res.status(400).json({ error: '没有文件' })
+
+    // 给上传的文件加 hero- 前缀
+    const newName = `hero-${req.file.filename}`
+    const oldPath = req.file.path
+    const newPath = path.join(UPLOAD_DIR, newName)
+    try {
+      fs.renameSync(oldPath, newPath)
+    } catch (e) {
+      return res.status(500).json({ error: '文件移动失败: ' + e.message })
+    }
+
+    // 清理旧的 hero- 图 (只保留一张最新的)
+    try {
+      const files = fs.readdirSync(UPLOAD_DIR).filter(
+        (f) => f.startsWith('hero-') && f !== newName
+      )
+      for (const f of files) {
+        fs.unlinkSync(path.join(UPLOAD_DIR, f))
+      }
+    } catch (e) {
+      console.warn('[hero-bg] 清理旧 hero 图失败:', e.message)
+    }
+
+    upsertSetting('hero_bg', { type: 'image', value: newName })
+    res.json({
+      ok: true,
+      type: 'image',
+      value: newName,
+      url: `${PUBLIC_BASE_URL}/data/figures/${newName}`,
+    })
+  })
+})
+
+// DELETE /api/settings/hero-bg - admin (重置默认)
+app.delete('/api/settings/hero-bg', requireAuth, (req, res) => {
+  // 清理所有 hero- 图
+  try {
+    const files = fs.readdirSync(UPLOAD_DIR).filter((f) => f.startsWith('hero-'))
+    for (const f of files) {
+      fs.unlinkSync(path.join(UPLOAD_DIR, f))
+    }
+  } catch {}
+  db.prepare('DELETE FROM settings WHERE key = ?').run('hero_bg')
+  res.json({ ok: true })
+})
+
+// ---------- 上传 (通用,admin) ----------
 
 // 上传图片 (admin) - 接收 multipart/form-data, 字段名 'file'
 // 返回 { url, filename }
