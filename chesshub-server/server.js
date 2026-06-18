@@ -7,9 +7,13 @@ import express from 'express'
 import cors from 'cors'
 import jwt from 'jsonwebtoken'
 import multer from 'multer'
+import rateLimit from 'express-rate-limit'
+import { fileTypeFromBuffer } from 'file-type'
+import pino from 'pino'
 import Database from 'better-sqlite3'
 import path from 'node:path'
 import fs from 'node:fs'
+import { readFile, unlink } from 'node:fs/promises'
 import crypto from 'node:crypto'
 import os from 'node:os'
 import { execSync } from 'node:child_process'
@@ -27,6 +31,15 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || '/var/www/chesshub-data/figures'
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data')
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*'
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'http://159.75.97.172'
+const NODE_ENV = process.env.NODE_ENV || 'development'
+
+// ---------- 日志 ----------
+const logger = pino({
+  level: process.env.LOG_LEVEL || 'info',
+  transport: NODE_ENV !== 'production'
+    ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } }
+    : undefined,
+})
 
 // ---------- 初始化 ----------
 fs.mkdirSync(UPLOAD_DIR, { recursive: true })
@@ -94,11 +107,62 @@ db.exec(`
 const app = express()
 
 // ---------- 中间件 ----------
+
+// CORS 白名单 (生产禁止 '*' + credentials)
 app.use(cors({
-  origin: CORS_ORIGIN === '*' ? true : CORS_ORIGIN.split(','),
+  origin: (origin, cb) => {
+    // 同源 / curl / 无 origin 头 → 放行
+    if (!origin) return cb(null, true)
+    // 显式 '*' 仅允许非生产
+    if (CORS_ORIGIN === '*') {
+      if (NODE_ENV === 'production') {
+        return cb(new Error('CORS wildcard disabled in production'))
+      }
+      return cb(null, true)
+    }
+    const allowed = CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+    if (allowed.includes(origin)) return cb(null, true)
+    // 拒绝: 不设 ACAO 头, 请求继续 200, 浏览器会拦 response
+    return cb(null, false)
+  },
   credentials: true,
 }))
+
 app.use(express.json({ limit: '2mb' }))
+
+// 给每次请求挂一个 child logger (方便 controller 里 req.log.error(...))
+app.use((req, res, next) => {
+  req.log = logger.child({ method: req.method, path: req.path })
+  next()
+})
+
+// ---------- Rate limit ----------
+const loginLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  message: { error: '登录尝试过于频繁，请 5 分钟后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { error: '上传过于频繁，请稍后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  message: { error: '请求过于频繁，请稍后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path === '/api/health',
+})
+
+app.use(globalLimiter)
 
 // JWT 校验
 function requireAuth(req, res, next) {
@@ -139,6 +203,40 @@ const upload = multer({
   },
 })
 
+// ---------- 上传后置校验: magic bytes ----------
+// 文件 mime 头部 (用于校验真实文件类型, 防止 .php 改后缀上传)
+const ALLOWED_MIMES = /^image\/(jpe?g|png|webp|gif)$/i
+
+async function validateImageMagic(req, res, next) {
+  if (!req.file) return next()
+  try {
+    const buf = await readFile(req.file.path)
+    const ft = await fileTypeFromBuffer(buf.slice(0, 4100))
+    if (!ft || !ALLOWED_MIMES.test(ft.mime)) {
+      await unlink(req.file.path).catch(() => {})
+      return res.status(400).json({ error: '文件内容与图片格式不符' })
+    }
+    // SVG 可带 <script>, 等效 XSS, 单独拒绝
+    if (req.file.originalname.toLowerCase().endsWith('.svg')) {
+      await unlink(req.file.path).catch(() => {})
+      return res.status(400).json({ error: '暂不支持 SVG' })
+    }
+    next()
+  } catch (e) {
+    req.log?.error({ err: e }, 'magic bytes check failed')
+    next(e)
+  }
+}
+
+// 包装 multer + magic bytes, 让 upload 路由里不用关心校验细节
+function uploadImageMiddleware(req, res, next) {
+  upload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || '上传失败' })
+    if (!req.file) return res.status(400).json({ error: '没有文件' })
+    validateImageMagic(req, res, next)
+  })
+}
+
 // ---------- 路由 ----------
 
 // 健康检查
@@ -147,7 +245,7 @@ app.get('/api/health', (req, res) => {
 })
 
 // 登录
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', loginLimiter, (req, res) => {
   const { username, password } = req.body || {}
   if (username !== ADMIN_USER || password !== ADMIN_PASS) {
     return res.status(401).json({ error: '账号或密码错误' })
@@ -161,7 +259,7 @@ app.post('/api/auth/login', (req, res) => {
 })
 
 // 游客登录 (不需要账号密码,直接发一个 guest 角色的 token)
-app.post('/api/auth/guest', (req, res) => {
+app.post('/api/auth/guest', loginLimiter, (req, res) => {
   const token = jwt.sign(
     { sub: 'guest', role: 'guest' },
     JWT_SECRET,
@@ -657,11 +755,8 @@ app.put('/api/settings/hero-bg', requireAuth, (req, res) => {
 })
 
 // POST /api/settings/hero-bg/upload - admin (上传图片做背景)
-app.post('/api/settings/hero-bg/upload', requireAuth, (req, res) => {
-  upload.single('file')(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message || '上传失败' })
-    if (!req.file) return res.status(400).json({ error: '没有文件' })
-
+app.post('/api/settings/hero-bg/upload', requireAuth, uploadLimiter, (req, res) => {
+  uploadImageMiddleware(req, res, () => {
     // 给上传的文件加 hero- 前缀
     const newName = `hero-${req.file.filename}`
     const oldPath = req.file.path
@@ -669,7 +764,8 @@ app.post('/api/settings/hero-bg/upload', requireAuth, (req, res) => {
     try {
       fs.renameSync(oldPath, newPath)
     } catch (e) {
-      return res.status(500).json({ error: '文件移动失败: ' + e.message })
+      req.log?.error({ err: e, op: 'hero-bg upload rename' }, 'file rename failed')
+      return res.status(500).json({ error: '文件移动失败' })
     }
 
     // 清理旧的 hero- 图 (只保留一张最新的)
@@ -681,7 +777,7 @@ app.post('/api/settings/hero-bg/upload', requireAuth, (req, res) => {
         fs.unlinkSync(path.join(UPLOAD_DIR, f))
       }
     } catch (e) {
-      console.warn('[hero-bg] 清理旧 hero 图失败:', e.message)
+      req.log?.warn({ err: e }, 'hero-bg cleanup old files failed')
     }
 
     upsertSetting('hero_bg', { type: 'image', value: newName })
@@ -729,11 +825,8 @@ app.get('/api/settings/about-photo', (req, res) => {
 })
 
 // POST /api/settings/about-photo/upload - admin
-app.post('/api/settings/about-photo/upload', requireAuth, (req, res) => {
-  upload.single('file')(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message || '上传失败' })
-    if (!req.file) return res.status(400).json({ error: '没有文件' })
-
+app.post('/api/settings/about-photo/upload', requireAuth, uploadLimiter, (req, res) => {
+  uploadImageMiddleware(req, res, () => {
     // 给上传的文件加 about- 前缀
     const newName = `about-${req.file.filename}`
     const oldPath = req.file.path
@@ -741,7 +834,8 @@ app.post('/api/settings/about-photo/upload', requireAuth, (req, res) => {
     try {
       fs.renameSync(oldPath, newPath)
     } catch (e) {
-      return res.status(500).json({ error: '文件移动失败: ' + e.message })
+      req.log?.error({ err: e, op: 'about-photo upload rename' }, 'file rename failed')
+      return res.status(500).json({ error: '文件移动失败' })
     }
 
     // 清理旧的 about- 图 (只保留一张最新的)
@@ -753,7 +847,7 @@ app.post('/api/settings/about-photo/upload', requireAuth, (req, res) => {
         fs.unlinkSync(path.join(UPLOAD_DIR, f))
       }
     } catch (e) {
-      console.warn('[about-photo] 清理旧 about 图失败:', e.message)
+      req.log?.warn({ err: e }, 'about-photo cleanup old files failed')
     }
 
     upsertSetting('about_photo', { filename: newName })
@@ -917,8 +1011,8 @@ app.get('/api/admin/usage', requireAuth, (req, res) => {
 
     res.json(result)
   } catch (e) {
-    console.error('[usage]', e)
-    res.status(500).json({ error: e.message })
+    req.log?.error({ err: e }, 'usage endpoint failed')
+    res.status(500).json({ error: '查询用量失败' })
   }
 })
 
@@ -936,7 +1030,7 @@ app.post('/api/admin/orphans/clean', requireAuth, (req, res) => {
         deletedBytes += o.bytes
         deletedFiles.push(o.filename)
       } catch (e) {
-        console.warn('[orphans/clean] 删文件失败:', o.filename, e.message)
+        req.log?.warn({ filename: o.filename, err: e }, 'orphan unlink failed')
       }
     }
     res.json({
@@ -945,8 +1039,8 @@ app.post('/api/admin/orphans/clean', requireAuth, (req, res) => {
       deleted_files: deletedFiles,
     })
   } catch (e) {
-    console.error('[orphans/clean]', e)
-    res.status(500).json({ error: e.message })
+    req.log?.error({ err: e }, 'orphans clean failed')
+    res.status(500).json({ error: '清理孤儿失败' })
   }
 })
 
@@ -954,19 +1048,26 @@ app.post('/api/admin/orphans/clean', requireAuth, (req, res) => {
 
 // 上传图片 (admin) - 接收 multipart/form-data, 字段名 'file'
 // 返回 { url, filename }
-app.post('/api/upload', requireAuth, (req, res) => {
-  upload.single('file')(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message || '上传失败' })
-    if (!req.file) return res.status(400).json({ error: '没有文件' })
-
+app.post('/api/upload', requireAuth, uploadLimiter, (req, res) => {
+  uploadImageMiddleware(req, res, () => {
     const url = `${PUBLIC_BASE_URL}/data/figures/${req.file.filename}`
     res.json({ url, filename: req.file.filename, size: req.file.size })
   })
 })
 
-// 错误处理
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'API 不存在' })
+})
+
+// 错误处理 (兜底, 永远不漏 e.message 给前端)
 app.use((err, req, res, next) => {
-  console.error('[error]', err.message)
+  // multer 错误 (file too large 等) 通常带 statusCode
+  const status = err.statusCode || 500
+  req.log?.error({ err, path: req.path, method: req.method }, 'request failed')
+  if (status >= 400 && status < 500) {
+    return res.status(status).json({ error: err.message || '请求错误' })
+  }
   res.status(500).json({ error: '服务器内部错误' })
 })
 
@@ -985,7 +1086,7 @@ function seedIfEmpty() {
   ]
   const src = sources.find((p) => fs.existsSync(p))
   if (!src) {
-    console.log('[seed] figures 表为空且找不到 aobing.jpg,跳过 seed')
+    logger.info('[seed] figures 表为空且找不到 aobing.jpg,跳过 seed')
     return
   }
 
@@ -993,9 +1094,9 @@ function seedIfEmpty() {
   const dest = path.join(UPLOAD_DIR, 'aobing.jpg')
   try {
     fs.copyFileSync(src, dest)
-    console.log(`[seed] 复制 ${src} -> ${dest}`)
+    logger.info({ src, dest }, '[seed] 复制')
   } catch (e) {
-    console.error('[seed] 复制失败:', e.message)
+    logger.error({ err: e, src, dest }, '[seed] 复制失败')
     return
   }
 
@@ -1015,14 +1116,14 @@ function seedIfEmpty() {
     JSON.stringify(['aobing.jpg']),
     '2026.06'
   )
-  console.log('[seed] 插入示例手办:摩动核 敖丙(白龙)')
+  logger.info('[seed] 插入示例手办:摩动核 敖丙(白龙)')
 }
 
 app.listen(PORT, '127.0.0.1', () => {
-  console.log(`[chesshub-server] listening on http://127.0.0.1:${PORT}`)
-  console.log(`[chesshub-server] admin: ${ADMIN_USER} / ${ADMIN_PASS}`)
-  console.log(`[chesshub-server] upload dir: ${UPLOAD_DIR}`)
-  console.log(`[chesshub-server] data dir:   ${DATA_DIR}`)
+  logger.info({ port: PORT, env: NODE_ENV }, `[chesshub-server] listening on http://127.0.0.1:${PORT}`)
+  logger.info({ user: ADMIN_USER }, '[chesshub-server] admin configured')
+  logger.info({ dir: UPLOAD_DIR }, '[chesshub-server] upload dir')
+  logger.info({ dir: DATA_DIR }, '[chesshub-server] data dir')
   seedIfEmpty()
   seedTravelIfEmpty()
   seedNoteIfEmpty()
@@ -1045,7 +1146,7 @@ function seedTravelIfEmpty() {
     JSON.stringify([]),
     '2025.10',
   )
-  console.log('[seed] 插入示例旅行: 大理')
+  logger.info('[seed] 插入示例旅行: 大理')
 }
 
 function seedNoteIfEmpty() {
@@ -1062,7 +1163,7 @@ function seedNoteIfEmpty() {
     JSON.stringify([]),
     '2026.05',
   )
-  console.log('[seed] 插入示例笔记: 周末咖啡')
+  logger.info('[seed] 插入示例笔记: 周末咖啡')
 }
 
 function seedWorkIfEmpty() {
@@ -1084,5 +1185,5 @@ function seedWorkIfEmpty() {
     JSON.stringify([]),
     '2026.04',
   )
-  console.log('[seed] 插入示例 work: OpenWrt 启动卡住')
+  logger.info('[seed] 插入示例 work: OpenWrt 启动卡住')
 }
