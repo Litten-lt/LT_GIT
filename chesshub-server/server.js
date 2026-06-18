@@ -86,15 +86,23 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS works (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     title       TEXT NOT NULL,
-    problem     TEXT,             -- 现象/问题
-    analysis    TEXT,             -- 排查过程
-    solution    TEXT,             -- 解决方法
-    tags        TEXT NOT NULL DEFAULT '[]',  -- JSON 数组,如 ["OpenWrt","Linux"]
-    images      TEXT NOT NULL,    -- JSON 数组,存文件名
+    description TEXT,            -- 创建时写的纯文本描述
     date        TEXT NOT NULL,
-    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
   CREATE INDEX IF NOT EXISTS idx_works_created ON works(created_at DESC);
+
+  -- 说明表: 一个 work 关联 N 条 note (调查/说明流,可追加)
+  CREATE TABLE IF NOT EXISTS work_notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_id     INTEGER NOT NULL,
+    content     TEXT,            -- 单条说明的纯文本
+    images      TEXT NOT NULL DEFAULT '[]',   -- JSON 数组
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    FOREIGN KEY (work_id) REFERENCES works(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_work_notes_work_id ON work_notes(work_id, created_at DESC);
 
   -- 全局设置 KV 表 (Hero 背景等)
   CREATE TABLE IF NOT EXISTS settings (
@@ -103,6 +111,61 @@ db.exec(`
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
 `)
+
+// 老 works 表迁移: 检测 problem 字段就拼 description 重建表, 保留 id
+const worksCols = db.prepare("PRAGMA table_info(works)").all().map(c => c.name)
+if (worksCols.includes('problem')) {
+  console.log('[migration] works: 旧 schema → 新 schema, 开始迁移...')
+  db.exec(`
+    ALTER TABLE works RENAME TO _works_legacy;
+
+    CREATE TABLE works (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      title       TEXT NOT NULL,
+      description TEXT,
+      date        TEXT NOT NULL,
+      created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    );
+
+    INSERT INTO works (id, title, description, date, created_at, updated_at)
+    SELECT
+      id,
+      title,
+      TRIM(COALESCE(
+        (CASE WHEN problem IS NOT NULL AND problem != '' THEN '[现象]' || char(10) || problem || char(10) || char(10) ELSE '' END) ||
+        (CASE WHEN analysis IS NOT NULL AND analysis != '' THEN '[排查]' || char(10) || analysis || char(10) || char(10) ELSE '' END) ||
+        (CASE WHEN solution IS NOT NULL AND solution != '' THEN '[解决]' || char(10) || solution ELSE '' END),
+        ''
+      )),
+      date,
+      created_at,
+      created_at
+    FROM _works_legacy;
+
+    -- 删老 work_notes: 它的 FK 引用 _works_legacy (SQLite 在 ALTER RENAME 时自动改了 FK 引用的表名)
+    -- _works_legacy 之后会 DROP, FK 会指向不存在的表 → 重建 work_notes 让 FK 引用新 works
+    DROP TABLE IF EXISTS work_notes;
+    CREATE TABLE work_notes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      work_id     INTEGER NOT NULL,
+      content     TEXT,
+      images      TEXT NOT NULL DEFAULT '[]',
+      created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      FOREIGN KEY (work_id) REFERENCES works(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_work_notes_work_id ON work_notes(work_id, created_at DESC);
+
+    -- 老 images (如果有图) → 创建第一条 note 存图, 保留原始截图
+    INSERT INTO work_notes (work_id, content, images, created_at)
+    SELECT id, '[原始截图]', images, created_at
+    FROM _works_legacy
+    WHERE images IS NOT NULL AND images != '[]' AND images != '';
+
+    DROP TABLE _works_legacy;
+  `)
+  console.log('[migration] works: 迁移完成')
+}
 
 const app = express()
 
@@ -164,7 +227,7 @@ const globalLimiter = rateLimit({
 
 app.use(globalLimiter)
 
-// JWT 校验
+// JWT 校验 - admin only (POST/PUT/DELETE + admin endpoints)
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization || ''
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
@@ -173,6 +236,22 @@ function requireAuth(req, res, next) {
   try {
     const payload = jwt.verify(token, JWT_SECRET)
     if (payload.role !== 'admin') return res.status(403).json({ error: '权限不足' })
+    req.user = payload
+    next()
+  } catch (e) {
+    return res.status(401).json({ error: 'token 无效或已过期' })
+  }
+}
+
+// 已登录即可 (admin + guest 都能过) - GET 列表/详情用
+// 防 curl 直接打后端拿数据
+function requireSession(req, res, next) {
+  const auth = req.headers.authorization || ''
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
+  if (!token) return res.status(401).json({ error: '未登录' })
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET)
     req.user = payload
     next()
   } catch (e) {
@@ -268,13 +347,13 @@ app.post('/api/auth/guest', loginLimiter, (req, res) => {
   res.json({ token, role: 'guest', username: '游客' })
 })
 
-// 验证 token 是否还有效
-app.get('/api/auth/me', requireAuth, (req, res) => {
+// 验证 token 是否还有效 (admin + guest 都能查自己)
+app.get('/api/auth/me', requireSession, (req, res) => {
   res.json({ username: req.user.sub, role: req.user.role })
 })
 
 // 列出所有手办 (公开)
-app.get('/api/figures', (req, res) => {
+app.get('/api/figures', requireSession, (req, res) => {
   const rows = db.prepare(`
     SELECT id, name, brand, description, images, date, created_at
     FROM figures
@@ -385,7 +464,7 @@ app.put('/api/figures/:id', requireAuth, (req, res) => {
 })
 
 // 列出所有 travel (公开)
-app.get('/api/travels', (req, res) => {
+app.get('/api/travels', requireSession, (req, res) => {
   const rows = db.prepare(`
     SELECT id, title, location, description, images, date, created_at
     FROM travels
@@ -489,7 +568,7 @@ app.put('/api/travels/:id', requireAuth, (req, res) => {
 })
 
 // 列出所有 note (公开)
-app.get('/api/notes', (req, res) => {
+app.get('/api/notes', requireSession, (req, res) => {
   const rows = db.prepare(`
     SELECT id, title, scene, description, images, date, created_at
     FROM notes
@@ -592,115 +671,220 @@ app.put('/api/notes/:id', requireAuth, (req, res) => {
   res.json({ ok: true, deletedFiles: imagesToDelete.length })
 })
 
-// 列出所有 work (公开) - 调试记录
-app.get('/api/works', (req, res) => {
+// 列出所有 work (含 note_count) - 调试记录
+app.get('/api/works', requireSession, (req, res) => {
   const rows = db.prepare(`
-    SELECT id, title, problem, analysis, solution, tags, images, date, created_at
-    FROM works
-    ORDER BY created_at DESC
+    SELECT w.id, w.title, w.description, w.date, w.created_at, w.updated_at,
+           (SELECT COUNT(*) FROM work_notes WHERE work_id = w.id) AS note_count
+    FROM works w
+    ORDER BY w.created_at DESC
   `).all()
-
-  const works = rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    problem: r.problem || undefined,
-    analysis: r.analysis || undefined,
-    solution: r.solution || undefined,
-    tags: JSON.parse(r.tags),
-    date: r.date,
-    images: JSON.parse(r.images).map((fn) => `${PUBLIC_BASE_URL}/data/figures/${fn}`),
-  }))
-  res.json({ works })
+  res.json({ works: rows })
 })
 
-// 新建 work (admin)
+// 详情 (含全部 notes, 按时间正序)
+app.get('/api/works/:id', requireSession, (req, res) => {
+  const id = Number(req.params.id)
+  const w = db.prepare(`
+    SELECT id, title, description, date, created_at, updated_at FROM works WHERE id = ?
+  `).get(id)
+  if (!w) return res.status(404).json({ error: '记录不存在' })
+
+  const notes = db.prepare(`
+    SELECT id, content, images, created_at FROM work_notes
+    WHERE work_id = ? ORDER BY created_at ASC
+  `).all(id)
+  for (const n of notes) {
+    try {
+      n.images = JSON.parse(n.images || '[]').map((fn) => `${PUBLIC_BASE_URL}/data/figures/${fn}`)
+    } catch {
+      n.images = []
+    }
+  }
+  res.json({ work: { ...w, notes, note_count: notes.length } })
+})
+
+// 新建 work (admin) - 极简: title + description (可空)
 app.post('/api/works', requireAuth, (req, res) => {
-  const { title, problem, analysis, solution, tags, images, date } = req.body || {}
-  if (!title || !Array.isArray(images) || images.length === 0) {
-    return res.status(400).json({ error: 'title、images 必填' })
+  const { title, description } = req.body || {}
+  if (!title || !title.trim()) {
+    return res.status(400).json({ error: '标题必填' })
   }
-  // problem/analysis/solution 至少一个非空
-  if (!problem?.trim() && !analysis?.trim() && !solution?.trim()) {
-    return res.status(400).json({ error: '现象 / 排查 / 解决 至少写一段' })
-  }
-
+  const date = new Date().toISOString().slice(0, 7).replace('-', '.')
   const result = db.prepare(`
-    INSERT INTO works (title, problem, analysis, solution, tags, images, date)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    title.trim(),
-    problem?.trim() || null,
-    analysis?.trim() || null,
-    solution?.trim() || null,
-    JSON.stringify(Array.isArray(tags) ? tags : []),
-    JSON.stringify(images),
-    date || new Date().toISOString().slice(0, 7).replace('-', '.'),
-  )
-
+    INSERT INTO works (title, description, date) VALUES (?, ?, ?)
+  `).run(title.trim(), description?.trim() || null, date)
   res.json({ id: result.lastInsertRowid })
 })
 
-// 删除 work (admin)
+// 删除 work (admin) - 级联删 notes (ON DELETE CASCADE) + 删 notes 的图
 app.delete('/api/works/:id', requireAuth, (req, res) => {
-  const id = parseInt(req.params.id, 10)
-  const row = db.prepare('SELECT images FROM works WHERE id = ?').get(id)
-  if (!row) return res.status(404).json({ error: '记录不存在' })
+  const id = Number(req.params.id)
+  const w = db.prepare('SELECT id FROM works WHERE id = ?').get(id)
+  if (!w) return res.status(404).json({ error: '记录不存在' })
 
-  db.prepare('DELETE FROM works WHERE id = ?').run(id)
-
-  const images = JSON.parse(row.images)
-  for (const fn of images) {
-    const fp = path.join(UPLOAD_DIR, fn)
-    fs.unlink(fp, () => {})
+  // 收集所有 notes 的图, 一起删
+  const notes = db.prepare('SELECT images FROM work_notes WHERE work_id = ?').all(id)
+  for (const n of notes) {
+    try {
+      const imgs = JSON.parse(n.images || '[]')
+      for (const fn of imgs) fs.unlink(path.join(UPLOAD_DIR, fn), () => {})
+    } catch { /* ignore */ }
   }
+
+  // ON DELETE CASCADE 自动删 notes
+  db.prepare('DELETE FROM works WHERE id = ?').run(id)
   res.json({ ok: true })
 })
 
-// 更新 work (admin) - 局部更新
-// body 可包含: title?, problem?, analysis?, solution?, tags?: string[], images?: string[]
+// 更新 work (admin) - 改 title + description
 app.put('/api/works/:id', requireAuth, (req, res) => {
-  const id = parseInt(req.params.id, 10)
-  const row = db.prepare('SELECT images FROM works WHERE id = ?').get(id)
-  if (!row) return res.status(404).json({ error: '记录不存在' })
+  const id = Number(req.params.id)
+  const w = db.prepare('SELECT id FROM works WHERE id = ?').get(id)
+  if (!w) return res.status(404).json({ error: '记录不存在' })
 
-  const { title, problem, analysis, solution, tags, images } = req.body || {}
-  const oldImages = JSON.parse(row.images)
-
+  const { title, description } = req.body || {}
   if (title !== undefined && !title.trim()) {
     return res.status(400).json({ error: '标题不能为空' })
-  }
-  if (images !== undefined && (!Array.isArray(images) || images.length === 0)) {
-    return res.status(400).json({ error: 'images 必须是非空数组' })
-  }
-
-  let imagesToDelete = []
-  if (images !== undefined) {
-    const newSet = new Set(images)
-    imagesToDelete = oldImages.filter((fn) => !newSet.has(fn))
   }
 
   const sets = []
   const args = []
   if (title !== undefined) { sets.push('title = ?'); args.push(title.trim()) }
-  if (problem !== undefined) { sets.push('problem = ?'); args.push(problem?.trim() || null) }
-  if (analysis !== undefined) { sets.push('analysis = ?'); args.push(analysis?.trim() || null) }
-  if (solution !== undefined) { sets.push('solution = ?'); args.push(solution?.trim() || null) }
-  if (tags !== undefined) { sets.push('tags = ?'); args.push(JSON.stringify(Array.isArray(tags) ? tags : [])) }
-  if (images !== undefined) { sets.push('images = ?'); args.push(JSON.stringify(images)) }
-
+  if (description !== undefined) { sets.push('description = ?'); args.push(description?.trim() || null) }
   if (sets.length === 0) {
     return res.status(400).json({ error: '没有要更新的字段' })
   }
 
+  sets.push("updated_at = strftime('%s','now')")
   args.push(id)
   db.prepare(`UPDATE works SET ${sets.join(', ')} WHERE id = ?`).run(...args)
+  res.json({ ok: true })
+})
 
-  for (const fn of imagesToDelete) {
-    const fp = path.join(UPLOAD_DIR, fn)
-    fs.unlink(fp, () => {})
-  }
+// ---------- work_notes 增删改 (admin) ----------
 
-  res.json({ ok: true, deletedFiles: imagesToDelete.length })
+// 添加一条说明 (admin) - 接收 content + 多张图片 (≤5 张)
+app.post('/api/works/:id/notes', requireAuth, uploadLimiter, (req, res) => {
+  const workId = Number(req.params.id)
+  const w = db.prepare('SELECT id FROM works WHERE id = ?').get(workId)
+  if (!w) return res.status(404).json({ error: 'work 不存在' })
+
+  upload.array('images', 5)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || '上传失败' })
+    ;(async () => {
+      try {
+        const content = req.body?.content?.trim() || null
+        const files = req.files || []
+
+        if (!content && files.length === 0) {
+          return res.status(400).json({ error: '内容或图片至少有一个' })
+        }
+
+        // magic bytes 校验 (失败清掉所有)
+        for (const f of files) {
+          try {
+            const buf = await readFile(f.path)
+            const ft = await fileTypeFromBuffer(buf.slice(0, 4100))
+            if (!ft || !ALLOWED_MIMES.test(ft.mime) || f.originalname.toLowerCase().endsWith('.svg')) {
+              for (const f2 of files) await unlink(f2.path).catch(() => {})
+              return res.status(400).json({ error: `${f.originalname} 文件格式不符` })
+            }
+          } catch (e) {
+            for (const f2 of files) await unlink(f2.path).catch(() => {})
+            req.log?.error({ err: e }, 'magic bytes check failed')
+            return res.status(500).json({ error: '文件校验失败' })
+          }
+        }
+
+        const uploadedFiles = files.map((f) => f.filename)
+        const result = db.prepare(`
+          INSERT INTO work_notes (work_id, content, images) VALUES (?, ?, ?)
+        `).run(workId, content, JSON.stringify(uploadedFiles))
+
+        db.prepare(`UPDATE works SET updated_at = strftime('%s','now') WHERE id = ?`).run(workId)
+        res.json({ id: result.lastInsertRowid, images: uploadedFiles })
+      } catch (e) {
+        req.log?.error({ err: e, workId }, 'POST /api/works/:id/notes failed')
+        res.status(500).json({ error: '服务器内部错误' })
+      }
+    })()
+  })
+})
+
+// 改一条说明 (admin) - 改 content + 完全替换 images (上传新图才删老图)
+app.put('/api/works/:id/notes/:nid', requireAuth, uploadLimiter, (req, res) => {
+  const workId = Number(req.params.id)
+  const noteId = Number(req.params.nid)
+  const n = db.prepare(`
+    SELECT id, images FROM work_notes WHERE id = ? AND work_id = ?
+  `).get(noteId, workId)
+  if (!n) return res.status(404).json({ error: 'note 不存在' })
+
+  upload.array('images', 5)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || '上传失败' })
+    ;(async () => {
+      try {
+        const content = req.body?.content?.trim() || null
+        const files = req.files || []
+
+        if (!content && files.length === 0) {
+          return res.status(400).json({ error: '内容或图片至少有一个' })
+        }
+
+        for (const f of files) {
+          try {
+            const buf = await readFile(f.path)
+            const ft = await fileTypeFromBuffer(buf.slice(0, 4100))
+            if (!ft || !ALLOWED_MIMES.test(ft.mime) || f.originalname.toLowerCase().endsWith('.svg')) {
+              for (const f2 of files) await unlink(f2.path).catch(() => {})
+              return res.status(400).json({ error: `${f.originalname} 文件格式不符` })
+            }
+          } catch (e) {
+            for (const f2 of files) await unlink(f2.path).catch(() => {})
+            req.log?.error({ err: e }, 'magic bytes check failed')
+            return res.status(500).json({ error: '文件校验失败' })
+          }
+        }
+
+        // 上传了新图才删老图; 没传新图就保留老图
+        const oldImages = JSON.parse(n.images || '[]')
+        if (files.length > 0) {
+          for (const fn of oldImages) fs.unlink(path.join(UPLOAD_DIR, fn), () => {})
+        }
+        const newImages = files.length > 0 ? files.map((f) => f.filename) : oldImages
+
+        db.prepare(`
+          UPDATE work_notes SET content = ?, images = ? WHERE id = ?
+        `).run(content, JSON.stringify(newImages), noteId)
+
+        db.prepare(`UPDATE works SET updated_at = strftime('%s','now') WHERE id = ?`).run(workId)
+        res.json({ ok: true, images: newImages })
+      } catch (e) {
+        req.log?.error({ err: e, workId, noteId }, 'PUT /api/works/:id/notes/:nid failed')
+        res.status(500).json({ error: '服务器内部错误' })
+      }
+    })()
+  })
+})
+
+// 删一条说明 (admin) - 删图 + 删记录
+app.delete('/api/works/:id/notes/:nid', requireAuth, (req, res) => {
+  const workId = Number(req.params.id)
+  const noteId = Number(req.params.nid)
+  const n = db.prepare(`
+    SELECT id, images FROM work_notes WHERE id = ? AND work_id = ?
+  `).get(noteId, workId)
+  if (!n) return res.status(404).json({ error: 'note 不存在' })
+
+  try {
+    const imgs = JSON.parse(n.images || '[]')
+    for (const fn of imgs) fs.unlink(path.join(UPLOAD_DIR, fn), () => {})
+  } catch { /* ignore */ }
+
+  db.prepare('DELETE FROM work_notes WHERE id = ?').run(noteId)
+  db.prepare(`UPDATE works SET updated_at = strftime('%s','now') WHERE id = ?`).run(workId)
+  res.json({ ok: true })
 })
 
 // ---------- Hero 背景设置 ----------
@@ -717,7 +901,7 @@ function upsertSetting(key, valueObj) {
 }
 
 // GET /api/settings/hero-bg - 任何人可读
-app.get('/api/settings/hero-bg', (req, res) => {
+app.get('/api/settings/hero-bg', requireSession, (req, res) => {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('hero_bg')
   if (!row) return res.json(DEFAULT_HERO_BG)
   try {
@@ -808,7 +992,7 @@ app.delete('/api/settings/hero-bg', requireAuth, (req, res) => {
 // 只保留一张, 上传时自动清旧的
 
 // GET /api/settings/about-photo - 任何人可读
-app.get('/api/settings/about-photo', (req, res) => {
+app.get('/api/settings/about-photo', requireSession, (req, res) => {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('about_photo')
   if (!row) return res.json({})
   try {
@@ -1170,19 +1354,13 @@ function seedWorkIfEmpty() {
   const count = db.prepare('SELECT COUNT(*) AS n FROM works').get().n
   if (count > 0) return
 
+  // 新模型: title + description (调查流,无 problem/analysis/solution/tags/images)
   db.prepare(`
-    INSERT INTO works (title, problem, analysis, solution, tags, images, date)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO works (title, description, date)
+    VALUES (?, ?, ?)
   `).run(
     'OpenWrt 调试踩坑 · 启动卡住',
-    '设备上电后启动卡在 "switching to clocksource tsc",要等 30 秒才进 shell。',
-    `试过几个常见方向:
-1. 关掉 watchdog - 没效果
-2. 改 console 输出到 earlycon - 没看到额外信息
-3. 看 dmesg 完整日志,发现是 mtd partition 扫描卡住`,
-    '把 rootfs 从 squashfs 换成 ext4 + 不挂载 debug 分区,启动时间从 30s 降到 4s。',
-    JSON.stringify(['OpenWrt', '嵌入式', '启动']),
-    JSON.stringify([]),
+    '设备上电后启动卡在 "switching to clocksource tsc",要等 30 秒才进 shell。\n\n试过 watchdog 关闭 / earlycon / dmesg 等方向,最后把 rootfs 从 squashfs 换成 ext4 + 不挂载 debug 分区,启动时间从 30s 降到 4s。',
     '2026.04',
   )
   logger.info('[seed] 插入示例 work: OpenWrt 启动卡住')

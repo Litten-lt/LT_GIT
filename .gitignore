@@ -1,0 +1,21 @@
+# 部署/调试临时文件 (不要入库)
+deploy-*.py
+probe*.py
+check-*.mjs
+check-*.py
+chmod-deploy-sh.py
+final-check.py
+final-smoke.py
+magic-bytes-test.py
+setup-https.py
+diag-443.py
+debug-migration.py
+patch-deploy-sh.py
+repro-*.mjs
+deploy.sh.remote
+deploy-run.log
+tests/.test-data/
+chesshub-server/test-debug/
+chesshub-server/test-data/
+chesshub-server/test-uploads/
+chesshub-server/check-i-db.mjs

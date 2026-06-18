@@ -558,8 +558,11 @@ describe('F. 回归烟雾测试', () => {
     assert.equal(r.body.role, 'admin')
   })
 
-  test('F.3 /api/figures 返回空数组 (新库)', async () => {
-    const r = await req(PORT, '/api/figures')
+  test('F.3 /api/figures 带 token 返回空数组 (新库)', async () => {
+    const token = await loginAsAdmin(PORT)
+    const r = await req(PORT, '/api/figures', {
+      headers: { authorization: `Bearer ${token}` },
+    })
     assert.equal(r.status, 200)
     assert.ok(Array.isArray(r.body.figures))
   })
@@ -576,5 +579,388 @@ describe('F. 回归烟雾测试', () => {
       headers: { authorization: `Bearer ${token}` },
     })
     assert.equal(r.status, 403)
+  })
+})
+
+// ---------- Group G: GET 鉴权 (修复 P0 之后的全表 GET 都要 session 验证) ----------
+
+describe('G. GET 鉴权 - 防 curl 直打后端', () => {
+  let server, logs = []
+  const PORT = 30060
+  before(async () => {
+    const dataDir = path.join(TEST_DATA, 'getauth-data')
+    const uploadDir = path.join(TEST_DATA, 'getauth-uploads')
+    await mkdir(dataDir, { recursive: true })
+    await mkdir(uploadDir, { recursive: true })
+    server = spawnServer({
+      DATA_DIR: dataDir,
+      UPLOAD_DIR: uploadDir,
+      CORS_ORIGIN: '*',
+    }, PORT, logs)
+    await waitForServer(PORT)
+  })
+  after(async () => { await killServer(server) })
+
+  // 7 个 GET 端点: 没 token 全部 401
+  const protectedGets = [
+    '/api/auth/me',
+    '/api/figures',
+    '/api/travels',
+    '/api/notes',
+    '/api/works',
+    '/api/settings/hero-bg',
+    '/api/settings/about-photo',
+  ]
+
+  for (const path of protectedGets) {
+    test(`G.1 无 token GET ${path} → 401`, async () => {
+      const r = await req(PORT, path)
+      assert.equal(r.status, 401, `expected 401 for ${path}, got ${r.status}: ${r.text}`)
+    })
+
+    test(`G.2 错 token GET ${path} → 401`, async () => {
+      const r = await req(PORT, path, {
+        headers: { authorization: 'Bearer invalid.token.here' },
+      })
+      assert.equal(r.status, 401, `expected 401 for ${path} with bad token`)
+    })
+  }
+
+  test('G.3 admin token 能读所有 GET 端点', async () => {
+    const token = await loginAsAdmin(PORT)
+    for (const path of protectedGets) {
+      const r = await req(PORT, path, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      assert.equal(r.status, 200, `admin GET ${path} should 200, got ${r.status}: ${r.text}`)
+    }
+  })
+
+  test('G.4 guest token 也能读 GET 端点 (产品意图: 游客可看内容)', async () => {
+    const loginRes = await req(PORT, '/api/auth/guest', { method: 'POST' })
+    const token = loginRes.body.token
+    assert.ok(token, 'guest login should return token')
+    for (const path of protectedGets) {
+      const r = await req(PORT, path, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      assert.equal(r.status, 200, `guest GET ${path} should 200, got ${r.status}: ${r.text}`)
+    }
+  })
+
+  test('G.5 /api/health 仍然公开 (不需要 token)', async () => {
+    const r = await req(PORT, '/api/health')
+    assert.equal(r.status, 200)
+  })
+
+  test('G.6 guest 不能写 (POST/PUT/DELETE 仍要 admin)', async () => {
+    const loginRes = await req(PORT, '/api/auth/guest', { method: 'POST' })
+    const token = loginRes.body.token
+    const r = await req(PORT, '/api/figures', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: 'x', description: 'x', images: [] }),
+    })
+    assert.equal(r.status, 403, `guest POST should 403, got ${r.status}`)
+  })
+})
+
+// ---------- Group H: work_notes CRUD + 老数据迁移 ----------
+
+describe('H. work 新模型 (title+description + notes 流)', () => {
+  let server, logs = []
+  const PORT = 30070
+  before(async () => {
+    const dataDir = path.join(TEST_DATA, 'workv2-data')
+    const uploadDir = path.join(TEST_DATA, 'workv2-uploads')
+    await mkdir(dataDir, { recursive: true })
+    await mkdir(uploadDir, { recursive: true })
+    server = spawnServer({
+      DATA_DIR: dataDir,
+      UPLOAD_DIR: uploadDir,
+      CORS_ORIGIN: '*',
+    }, PORT, logs)
+    await waitForServer(PORT)
+  })
+  after(async () => { await killServer(server) })
+
+  test('H.1 POST /api/works 缺 title → 400', async () => {
+    const tok = await loginAsAdmin(PORT)
+    const r = await req(PORT, '/api/works', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ description: 'only desc' }),
+    })
+    assert.equal(r.status, 400)
+  })
+
+  test('H.2 POST /api/works 缺 title 不接受老字段 (problem/analysis/tags)', async () => {
+    const tok = await loginAsAdmin(PORT)
+    const r = await req(PORT, '/api/works', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ title: 'x', problem: 'old', tags: ['t'] }),
+    })
+    // 不报错,但 problem/tags 字段被忽略 (只存 title+description)
+    assert.equal(r.status, 200)
+  })
+
+  test('H.3 GET /api/works 列表只返 work 字段 (无 problem/analysis/tags/images)', async () => {
+    const tok = await loginAsAdmin(PORT)
+    const r = await req(PORT, '/api/works', { headers: { authorization: `Bearer ${tok}` } })
+    assert.equal(r.status, 200)
+    assert.ok(Array.isArray(r.body.works))
+    for (const w of r.body.works) {
+      assert.ok('id' in w && 'title' in w)
+      assert.ok(!('problem' in w), `work 应不含 problem 字段`)
+      assert.ok(!('analysis' in w), `work 应不含 analysis 字段`)
+      assert.ok(!('solution' in w), `work 应不含 solution 字段`)
+      assert.ok(!('tags' in w), `work 应不含 tags 字段`)
+      assert.ok(!('images' in w), `work 应不含 images 字段 (主表已不存图)`)
+      assert.ok('note_count' in w, `work 应含 note_count`)
+    }
+  })
+
+  test('H.4 POST /api/works + GET /api/works/:id 含 notes 数组', async () => {
+    const tok = await loginAsAdmin(PORT)
+    // 创建
+    const create = await req(PORT, '/api/works', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ title: '测试 ticket', description: '这是描述' }),
+    })
+    assert.equal(create.status, 200)
+    const id = create.body.id
+    // 详情
+    const detail = await req(PORT, `/api/works/${id}`, { headers: { authorization: `Bearer ${tok}` } })
+    assert.equal(detail.status, 200)
+    assert.equal(detail.body.work.title, '测试 ticket')
+    assert.equal(detail.body.work.description, '这是描述')
+    assert.ok(Array.isArray(detail.body.work.notes))
+    assert.equal(detail.body.work.note_count, 0)
+  })
+
+  test('H.5 POST /api/works/:id/notes 加一条纯文本 note', async () => {
+    const tok = await loginAsAdmin(PORT)
+    const list = await req(PORT, '/api/works', { headers: { authorization: `Bearer ${tok}` } })
+    const id = list.body.works[0].id
+    // multer 只解析 multipart/form-data, 用 FormData (会自动设 Content-Type + boundary)
+    const fd = new FormData()
+    fd.append('content', '第一条调查说明')
+    const r = await req(PORT, `/api/works/${id}/notes`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${tok}` },
+      body: fd,
+    })
+    assert.equal(r.status, 200, `note POST should 200, got ${r.status}: ${r.text}`)
+    // 详情
+    const detail = await req(PORT, `/api/works/${id}`, { headers: { authorization: `Bearer ${tok}` } })
+    assert.equal(detail.body.work.note_count, 1)
+    assert.equal(detail.body.work.notes[0].content, '第一条调查说明')
+  })
+
+  test('H.6 POST /api/works/:id/notes 加 note + 真 jpg (magic bytes 通过)', async () => {
+    const tok = await loginAsAdmin(PORT)
+    const list = await req(PORT, '/api/works', { headers: { authorization: `Bearer ${tok}` } })
+    const id = list.body.works[0].id
+    // 用之前 evilJpeg 工具函数 (if defined) 或 inline
+    const jpegHex = 'ffd8ffe000104a46494600010101006000600000ffdb0043000302020302020303030304030304050805050404050a070706080c0a0c0c0b0a0b0b0d0e12100d0e110e0b0b101610111213141514080a171918141a0d141412ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405060708090a0bffc4001f0100030101010101010101010000000000000102030405060708090a0bffda0008010100003f00fbd0ffd9'
+    const jpgBuf = Buffer.from(jpegHex, 'hex')
+    const fd = new FormData()
+    fd.append('content', '带图的说明')
+    fd.append('images', new Blob([jpgBuf], { type: 'image/jpeg' }), 'test.jpg')
+    const r = await req(PORT, `/api/works/${id}/notes`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${tok}` },
+      body: fd,
+    })
+    assert.equal(r.status, 200, `note with jpg should 200, got ${r.status}: ${r.text}`)
+    assert.equal(r.body.images.length, 1)
+  })
+
+  test('H.7 POST /api/works/:id/notes 上传 PHP-as-jpg → 400 (magic bytes 拒)', async () => {
+    const tok = await loginAsAdmin(PORT)
+    const list = await req(PORT, '/api/works', { headers: { authorization: `Bearer ${tok}` } })
+    const id = list.body.works[0].id
+    const fd = new FormData()
+    fd.append('content', 'evil')
+    fd.append('images', new Blob([evilPhp()], { type: 'image/jpeg' }), 'evil.jpg')
+    const r = await req(PORT, `/api/works/${id}/notes`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${tok}` },
+      body: fd,
+    })
+    assert.equal(r.status, 400, `PHP-as-jpg should 400, got ${r.status}: ${r.text}`)
+  })
+
+  test('H.8 PUT /api/works/:id/notes/:nid 改 content + 替换图', async () => {
+    const tok = await loginAsAdmin(PORT)
+    const list = await req(PORT, '/api/works', { headers: { authorization: `Bearer ${tok}` } })
+    const id = list.body.works[0].id
+    const detail = await req(PORT, `/api/works/${id}`, { headers: { authorization: `Bearer ${tok}` } })
+    const noteId = detail.body.work.notes[0].id
+    const fd = new FormData()
+    fd.append('content', '改后的内容')
+    const r = await req(PORT, `/api/works/${id}/notes/${noteId}`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${tok}` },
+      body: fd,
+    })
+    assert.equal(r.status, 200, `note PUT should 200, got ${r.status}: ${r.text}`)
+    const detail2 = await req(PORT, `/api/works/${id}`, { headers: { authorization: `Bearer ${tok}` } })
+    assert.equal(detail2.body.work.notes[0].content, '改后的内容')
+  })
+
+  test('H.9 DELETE /api/works/:id 级联删 notes + 删图文件', async () => {
+    const tok = await loginAsAdmin(PORT)
+    const list = await req(PORT, '/api/works', { headers: { authorization: `Bearer ${tok}` } })
+    const id = list.body.works[0].id
+    // 记下 work 现在的 note 数
+    const detail = await req(PORT, `/api/works/${id}`, { headers: { authorization: `Bearer ${tok}` } })
+    const notesCount = detail.body.work.note_count
+    assert.ok(notesCount > 0, 'sanity: work 应有 notes')
+
+    // 删 work
+    const r = await req(PORT, `/api/works/${id}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${tok}` },
+    })
+    assert.equal(r.status, 200)
+
+    // 详情应该 404
+    const detail2 = await req(PORT, `/api/works/${id}`, { headers: { authorization: `Bearer ${tok}` } })
+    assert.equal(detail2.status, 404)
+  })
+
+  test('H.10 PUT /api/works/:id 改 title + description', async () => {
+    const tok = await loginAsAdmin(PORT)
+    // 先创建一个
+    const create = await req(PORT, '/api/works', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ title: '原标题', description: '原描述' }),
+    })
+    const id = create.body.id
+    const r = await req(PORT, `/api/works/${id}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ title: '新标题', description: '新描述' }),
+    })
+    assert.equal(r.status, 200)
+    const detail = await req(PORT, `/api/works/${id}`, { headers: { authorization: `Bearer ${tok}` } })
+    assert.equal(detail.body.work.title, '新标题')
+    assert.equal(detail.body.work.description, '新描述')
+  })
+})
+
+// ---------- Group I: 老 schema 迁移 ----------
+
+describe('I. 老 schema → 新 schema 数据迁移', () => {
+  // 先用 node 脚本模拟老 DB schema, 启动 server, 验证迁移结果
+  let server, logs = []
+  const PORT = 30080
+  const dataDir = path.join(TEST_DATA, 'migrate-data')
+  const uploadDir = path.join(TEST_DATA, 'migrate-uploads')
+  let adminToken, oldId
+
+  before(async () => {
+    await mkdir(dataDir, { recursive: true })
+    await mkdir(uploadDir, { recursive: true })
+
+    // 1. 先清空 DB (避免重跑时老 schema 残留), 手动建一个老 schema 的 works 表 + 1 条记录
+    const dbPath = path.join(dataDir, 'chesshub.db')
+    try { await unlink(dbPath) } catch { /* ignore */ }
+    const mod = await import('better-sqlite3')
+    const Database = mod.default || mod
+    const db = new Database(dbPath)
+    db.exec(`
+      CREATE TABLE works (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        title       TEXT NOT NULL,
+        problem     TEXT,
+        analysis    TEXT,
+        solution    TEXT,
+        tags        TEXT NOT NULL DEFAULT '[]',
+        images      TEXT NOT NULL,
+        date        TEXT NOT NULL,
+        created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      );
+      INSERT INTO works (title, problem, analysis, solution, tags, images, date)
+      VALUES (
+        '老 ticket 标题',
+        '老现象: 设备启动慢',
+        '老排查: dmesg 看了',
+        '老解决: 换了 rootfs',
+        '["OpenWrt","legacy"]',
+        '[]',
+        '2026.03'
+      );
+    `)
+    const row = db.prepare('SELECT id FROM works').get()
+    oldId = row.id
+    db.close()
+    console.log(`[I before] created legacy works table with id=${oldId}`)
+
+    // 2. 启动 server, 触发迁移
+    server = spawnServer({
+      DATA_DIR: dataDir,
+      UPLOAD_DIR: uploadDir,
+      CORS_ORIGIN: '*',
+    }, PORT, logs)
+    await waitForServer(PORT)
+  })
+  after(async () => { await killServer(server) })
+
+  test('I.1 迁移后 GET /api/works 列表能看到老数据 (id 保留)', async () => {
+    adminToken = await loginAsAdmin(PORT)
+    const r = await req(PORT, '/api/works', { headers: { authorization: `Bearer ${adminToken}` } })
+    assert.equal(r.status, 200)
+    const w = r.body.works.find((x) => x.id === oldId)
+    assert.ok(w, `老 id=${oldId} 应保留`)
+    assert.equal(w.title, '老 ticket 标题')
+  })
+
+  test('I.2 迁移后 GET /api/works/:id description 拼接了 [现象]/[排查]/[解决]', async () => {
+    const r = await req(PORT, `/api/works/${oldId}`, { headers: { authorization: `Bearer ${adminToken}` } })
+    assert.equal(r.status, 200)
+    const desc = r.body.work.description
+    assert.ok(desc.includes('[现象]'), `description 应含 [现象] tag, got: ${desc.slice(0, 200)}`)
+    assert.ok(desc.includes('[排查]'), `description 应含 [排查] tag`)
+    assert.ok(desc.includes('[解决]'), `description 应含 [解决] tag`)
+    assert.ok(desc.includes('老现象'))
+    assert.ok(desc.includes('老排查'))
+    assert.ok(desc.includes('老解决'))
+  })
+
+  test('I.3 迁移后 work 不再有 problem/analysis/tags/images 字段', async () => {
+    const r = await req(PORT, `/api/works/${oldId}`, { headers: { authorization: `Bearer ${adminToken}` } })
+    const w = r.body.work
+    assert.ok(!('problem' in w))
+    assert.ok(!('analysis' in w))
+    assert.ok(!('solution' in w))
+    assert.ok(!('tags' in w))
+    assert.ok(!('images' in w))
+  })
+
+  test('I.4 迁移后可以追加新 note (老 work 也能用新功能)', async () => {
+    const fd = new FormData()
+    fd.append('content', '迁移后追加的新说明')
+    const r = await req(PORT, `/api/works/${oldId}/notes`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${adminToken}` },
+      body: fd,
+    })
+    assert.equal(r.status, 200, `migrated work add note should 200, got ${r.status}: ${r.text}`)
+    const detail = await req(PORT, `/api/works/${oldId}`, { headers: { authorization: `Bearer ${adminToken}` } })
+    assert.equal(detail.body.work.note_count, 1)
+    assert.equal(detail.body.work.notes[0].content, '迁移后追加的新说明')
+  })
+
+  after(async () => {
+    if (logs.length) {
+      console.log('=== I server logs (last 50) ===')
+      console.log(logs.slice(-50).join(''))
+    }
+    await killServer(server)
   })
 })

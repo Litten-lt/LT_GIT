@@ -212,26 +212,34 @@ export function updateNote(
 export type Work = {
   id: number
   title: string
-  problem?: string
-  analysis?: string
-  solution?: string
-  tags: string[]
+  description?: string
   date: string
-  images: string[]
+  created_at: number
+  updated_at: number
+  note_count: number
+  // 仅详情
+  notes?: WorkNote[]
+}
+
+export type WorkNote = {
+  id: number
+  work_id: number
+  content?: string
+  images: string[]  // 完整 URL
+  created_at: number
 }
 
 export function listWorks() {
   return request<{ works: Work[] }>('/works')
 }
 
+export function getWork(id: number) {
+  return request<{ work: Work }>(`/works/${id}`)
+}
+
 export function createWork(payload: {
   title: string
-  problem?: string
-  analysis?: string
-  solution?: string
-  tags?: string[]
-  images: string[]
-  date?: string
+  description?: string
 }) {
   return request<{ id: number }>('/works', {
     method: 'POST',
@@ -247,15 +255,45 @@ export function updateWork(
   id: number,
   payload: {
     title?: string
-    problem?: string
-    analysis?: string
-    solution?: string
-    tags?: string[]
-    images?: string[]
+    description?: string
   },
 ) {
-  return request<{ ok: true; deletedFiles: number }>(`/works/${id}`, {
+  return request<{ ok: true }>(`/works/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
+  })
+}
+
+// ---------- work_notes (说明/调查流) ----------
+export function addWorkNote(
+  workId: number,
+  payload: { content: string; files: File[] },
+) {
+  const fd = new FormData()
+  fd.append('content', payload.content)
+  for (const f of payload.files) fd.append('images', f)
+  return request<{ id: number; images: string[] }>(`/works/${workId}/notes`, {
+    method: 'POST',
+    body: fd,
+  })
+}
+
+export function updateWorkNote(
+  workId: number,
+  noteId: number,
+  payload: { content: string; files: File[] },
+) {
+  const fd = new FormData()
+  fd.append('content', payload.content)
+  for (const f of payload.files) fd.append('images', f)
+  return request<{ ok: true; images: string[] }>(
+    `/works/${workId}/notes/${noteId}`,
+    { method: 'PUT', body: fd },
+  )
+}
+
+export function deleteWorkNote(workId: number, noteId: number) {
+  return request<{ ok: true }>(`/works/${workId}/notes/${noteId}`, {
+    method: 'DELETE',
   })
 }
