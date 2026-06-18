@@ -901,7 +901,7 @@ function upsertSetting(key, valueObj) {
 }
 
 // GET /api/settings/hero-bg - 任何人可读
-app.get('/api/settings/hero-bg', requireSession, (req, res) => {
+app.get('/api/settings/hero-bg', (req, res) => {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('hero_bg')
   if (!row) return res.json(DEFAULT_HERO_BG)
   try {
@@ -992,7 +992,7 @@ app.delete('/api/settings/hero-bg', requireAuth, (req, res) => {
 // 只保留一张, 上传时自动清旧的
 
 // GET /api/settings/about-photo - 任何人可读
-app.get('/api/settings/about-photo', requireSession, (req, res) => {
+app.get('/api/settings/about-photo', (req, res) => {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('about_photo')
   if (!row) return res.json({})
   try {
@@ -1056,10 +1056,10 @@ app.delete('/api/settings/about-photo', requireAuth, (req, res) => {
 
 // ---------- Usage & Admin (admin) ----------
 
-// 拿 DB 引用文件集合 (figures/travels/notes/works)
+// 拿 DB 引用文件集合 (figures/travels/notes + work_notes; works 表本身无 images 列)
 function getDbReferencedFiles() {
   const set = new Set()
-  for (const t of ['figures', 'travels', 'notes', 'works']) {
+  for (const t of ['figures', 'travels', 'notes', 'work_notes']) {
     for (const r of db.prepare('SELECT images FROM ' + t).all()) {
       try {
         JSON.parse(r.images).forEach((f) => set.add(f))
