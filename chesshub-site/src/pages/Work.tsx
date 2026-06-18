@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import App from '../App'
 import {
   listWorks,
@@ -7,6 +9,7 @@ import {
   updateWork,
   deleteWork,
   addWorkNote,
+  updateWorkNote,
   deleteWorkNote,
   type Work,
   type WorkNote,
@@ -29,7 +32,6 @@ function fileToPreview(file: File): Promise<string> {
   })
 }
 
-// 时间戳 → "06-18 14:30"
 function formatNoteTime(unix: number): string {
   const d = new Date(unix * 1000)
   const mm = String(d.getMonth() + 1).padStart(2, '0')
@@ -47,7 +49,7 @@ export default function WorkPage() {
   const [admin, setAdmin] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
 
-  // 守卫 + 初次加载列表
+  // 守卫 + 初次加载
   useEffect(() => {
     if (!ensureLoggedIn()) return
     setAdmin(isAdmin())
@@ -104,7 +106,6 @@ export default function WorkPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // 编辑态切到详情 (添加 note 后 / 取消编辑)
   const toDetail = (id: number) => {
     const url = new URL(window.location.href)
     url.searchParams.set('id', String(id))
@@ -114,13 +115,11 @@ export default function WorkPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // 切到编辑态 (从详情)
   const toEdit = () => {
     setView('edit')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // 数据加载
   async function loadList() {
     setLoading(true)
     try {
@@ -153,7 +152,7 @@ export default function WorkPage() {
 
   return (
     <App current="work">
-      <div className="max-w-3xl mx-auto px-6 pt-12 pb-24">
+      <div className="max-w-3xl md:max-w-4xl xl:max-w-5xl mx-auto px-6 pt-12 pb-24">
         {view === 'list' && (
           <ListView
             works={works}
@@ -199,6 +198,11 @@ export default function WorkPage() {
               await loadDetail(workId)
               await loadList()
             }}
+            onEditNote={async (workId, noteId, payload) => {
+              await updateWorkNote(workId, noteId, payload)
+              await loadDetail(workId)
+              await loadList()
+            }}
           />
         )}
 
@@ -208,14 +212,12 @@ export default function WorkPage() {
             admin={admin}
             onCancel={() => current && toDetail(current.id)}
             onSaved={async (id) => {
-              // 改完 title/description: 重新加载详情数据
               await loadDetail(id)
               await loadList()
             }}
             onAddNote={async (id, payload) => {
               await addWorkNote(id, payload)
               await loadList()
-              // 加完 note 跳回详情
               toDetail(id)
             }}
           />
@@ -302,7 +304,6 @@ function ListView({
   )
 }
 
-// 列表项 (极简: ticket # + 标题 + 说明数)
 function WorkSummaryRow({
   work,
   canDelete,
@@ -417,7 +418,7 @@ function NewView({
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          rows={8}
+          rows={6}
           placeholder={'一句话描述这次要调查什么。\n详细调查过程去详情页用"添加说明"一条条追加。'}
           disabled={submitting}
           className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 resize-y disabled:opacity-50 font-mono"
@@ -437,7 +438,325 @@ function NewView({
   )
 }
 
-// ============ 详情视图 (只读 + 每条 note 可删) ============
+// ============ note 卡片 (详情只读 + 可选 inline 编辑) ============
+function NoteCard({
+  note,
+  canDelete,
+  canEdit,
+  onDelete,
+  onEdit,
+}: {
+  note: WorkNote
+  canDelete: boolean
+  canEdit: boolean
+  onDelete: () => void
+  onEdit: (content: string, files: File[]) => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  if (editing) {
+    return (
+      <article className="border-l-2 border-accent pl-4 py-2 bg-accent/5 -ml-2 pl-4">
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+          <div className="text-[11px] font-mono text-accent">
+            #{String(note.id).padStart(3, '0')} · 编辑中
+          </div>
+          <div className="flex items-center gap-2">
+            {canDelete && !submitting && (
+              <button
+                onClick={onDelete}
+                className="text-[11px] text-ink-soft/50 hover:text-accent transition"
+                title="删除这条说明"
+              >
+                × 删除
+              </button>
+            )}
+          </div>
+        </div>
+        <NoteEditor
+          initialContent={note.content || ''}
+          initialImages={note.images}
+          submitting={submitting}
+          label="// 编辑这条说明 · 保存后留在原地"
+          submitLabel="💾 保存修改"
+          showCancel
+          onSave={async (content, files) => {
+            setSubmitting(true)
+            try {
+              await onEdit(content, files)
+              setEditing(false)
+            } catch (err: any) {
+              alert('保存失败: ' + (err.message || err))
+            } finally {
+              setSubmitting(false)
+            }
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      </article>
+    )
+  }
+
+  return (
+    <article className="border-l-2 border-ink/10 pl-4 py-2">
+      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+        <div className="text-[11px] font-mono text-ink-soft/60">
+          #{String(note.id).padStart(3, '0')} · {formatNoteTime(note.created_at)}
+        </div>
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-[11px] text-ink-soft/70 hover:text-accent transition"
+              title="编辑这条说明"
+            >
+              ✎ 编辑
+            </button>
+          )}
+          {canDelete && (
+            <button
+              onClick={onDelete}
+              className="text-[11px] text-ink-soft/50 hover:text-accent transition"
+              title="删除这条说明"
+            >
+              × 删除
+            </button>
+          )}
+        </div>
+      </div>
+      {note.content && (
+        <MarkdownRender content={note.content} />
+      )}
+      {note.images.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mt-3">
+          {note.images.map((url, i) => (
+            <a
+              key={i}
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="block rounded-lg border border-ink/10 overflow-hidden hover:shadow-lg transition"
+            >
+              <img src={url} alt="" className="w-full h-auto" loading="lazy" />
+            </a>
+          ))}
+        </div>
+      )}
+    </article>
+  )
+}
+
+// ============ Note 编辑器 (创建/编辑共用: toolbar + textarea + 文件上传 + 取消/保存) ============
+function NoteEditor({
+  initialContent,
+  initialImages,
+  onSave,
+  onCancel,
+  submitting,
+  label,
+  submitLabel,
+  showCancel,
+}: {
+  initialContent: string
+  initialImages: string[]
+  onSave: (content: string, files: File[]) => Promise<void>
+  onCancel: () => void
+  submitting: boolean
+  label: string
+  submitLabel: string
+  showCancel: boolean
+}) {
+  const [content, setContent] = useState(initialContent)
+  const [newFiles, setNewFiles] = useState<File[]>([])
+  const [newPreviews, setNewPreviews] = useState<string[]>([])
+  const [showPreview, setShowPreview] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  function pickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files || [])
+    if (picked.length === 0) return
+    const valid: File[] = []
+    const skipped: string[] = []
+    for (const f of picked) {
+      if (!/^image\//.test(f.type)) {
+        skipped.push(f.name)
+        continue
+      }
+      if (f.size > 5 * 1024 * 1024) {
+        skipped.push(`${f.name} (超过 5MB)`)
+        continue
+      }
+      valid.push(f)
+    }
+    if (skipped.length > 0) {
+      alert('以下文件已跳过 (非图片或超过 5MB):\n' + skipped.join('\n'))
+    }
+    if (valid.length === 0) return
+    setNewFiles((prev) => [...prev, ...valid])
+    Promise.all(valid.map(fileToPreview)).then((p) => {
+      setNewPreviews((prev) => [...prev, ...p])
+    })
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function removeFile(i: number) {
+    setNewFiles((prev) => prev.filter((_, idx) => idx !== i))
+    setNewPreviews((prev) => prev.filter((_, idx) => idx !== i))
+  }
+
+  async function handleSubmit(e?: React.FormEvent) {
+    if (e) e.preventDefault()
+    if (!content.trim() && newFiles.length === 0 && initialImages.length === 0) {
+      alert('内容或图片至少有一个')
+      return
+    }
+    await onSave(content.trim(), newFiles)
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-mono text-ink-soft/70">{label}</div>
+        <button
+          type="button"
+          onClick={() => setShowPreview(!showPreview)}
+          className="text-[11px] text-ink-soft hover:text-accent transition"
+        >
+          {showPreview ? '✎ 写' : '👁 预览'}
+        </button>
+      </div>
+
+      {showPreview ? (
+        <div className="min-h-[120px] px-4 py-3 bg-white border border-ink/10 rounded-md">
+          {content.trim() ? (
+            <MarkdownRender content={content} />
+          ) : (
+            <div className="text-ink-soft/50 text-sm italic">还没内容</div>
+          )}
+        </div>
+      ) : (
+        <>
+          <MarkdownToolbar
+            textareaRef={textareaRef}
+            value={content}
+            onChange={setContent}
+          />
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={6}
+            disabled={submitting}
+            placeholder={`# 现象\n...\n\n## 排查\n...\n\n## 解决\n...`}
+            className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-b-md focus:outline-none focus:border-ink/30 resize-y disabled:opacity-50 font-mono"
+          />
+        </>
+      )}
+
+      {/* 老图 (编辑模式时显示) */}
+      {initialImages.length > 0 && (
+        <div>
+          <div className="text-xs font-mono text-ink-soft mb-1.5">
+            // 当前图片 ({initialImages.length} 张) · 不上传新图则保留,上传则整体替换
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-5 gap-2">
+            {initialImages.map((url) => (
+              <div key={url} className="aspect-square rounded-lg overflow-hidden border border-ink/10">
+                <img src={url} alt="" className="w-full h-full object-cover" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 新上传 */}
+      <div>
+        <div className="flex items-baseline justify-between mb-1.5">
+          <label className="text-xs font-mono text-ink-soft uppercase tracking-widest">
+            {initialImages.length > 0 ? '替换截图 (可选)' : '截图 (可选,单张 ≤ 5MB)'}
+          </label>
+          {newFiles.length > 0 && !submitting && (
+            <button
+              type="button"
+              onClick={() => {
+                setNewFiles([])
+                setNewPreviews([])
+              }}
+              className="text-[11px] text-ink-soft hover:text-accent transition"
+            >
+              × 清空
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={submitting}
+          className="w-full p-3 border-2 border-dashed border-ink/20 rounded-xl hover:border-accent/40 hover:bg-accent/5 transition flex flex-col items-center gap-1 disabled:opacity-50"
+        >
+          <div className="text-xl">📷</div>
+          <div className="text-sm font-semibold text-ink">
+            {newFiles.length === 0 ? '选择截图' : '继续添加'}
+          </div>
+          <div className="text-[11px] text-ink-soft/70 font-mono">
+            当前 {newFiles.length} 张 · 可一次选多张
+          </div>
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={pickFiles}
+          className="hidden"
+        />
+        {newPreviews.length > 0 && (
+          <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-5 gap-2 mt-3">
+            {newPreviews.map((p, i) => (
+              <div
+                key={i}
+                className="relative aspect-square rounded-lg overflow-hidden border border-ink/10 group"
+              >
+                <img src={p} alt="" className="w-full h-full object-cover" />
+                {!submitting && (
+                  <button
+                    type="button"
+                    onClick={() => removeFile(i)}
+                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-end gap-2 pt-1">
+        {showCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            className="px-3 py-1.5 text-sm text-ink-soft hover:text-ink transition disabled:opacity-50"
+          >
+            取消
+          </button>
+        )}
+        <button
+          type="submit"
+          disabled={submitting}
+          className="px-5 py-2 text-sm font-semibold text-white bg-accent rounded-md hover:bg-accent/90 transition disabled:opacity-50"
+        >
+          {submitting ? '保存中…' : submitLabel}
+        </button>
+      </div>
+    </form>
+  )
+}
 function DetailView({
   work,
   loading,
@@ -446,6 +765,7 @@ function DetailView({
   onEdit,
   onDelete,
   onDeleteNote,
+  onEditNote,
 }: {
   work: Work | null
   loading: boolean
@@ -454,6 +774,7 @@ function DetailView({
   onEdit: () => void
   onDelete: (id: number) => void
   onDeleteNote: (workId: number, noteId: number) => void
+  onEditNote: (workId: number, noteId: number, payload: { content: string; files: File[] }) => Promise<void>
 }) {
   if (loading) {
     return <div className="text-center py-20 text-ink-soft/60">加载中…</div>
@@ -473,7 +794,6 @@ function DetailView({
 
   return (
     <article className="border-l-2 border-ink/10 pl-6 hover:border-accent transition-colors">
-      {/* 顶部: 返回 + 编辑 + 删除 */}
       <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <button
           onClick={onBack}
@@ -500,7 +820,6 @@ function DetailView({
         )}
       </div>
 
-      {/* ticket # + 日期 + 标题 */}
       <div className="flex items-baseline gap-2 mb-3 flex-wrap">
         <span className="font-mono text-xs text-white bg-rose-500 px-2 py-0.5 rounded tracking-wider">
           #{ticketId}
@@ -509,19 +828,15 @@ function DetailView({
       </div>
       <h2 className="text-2xl font-bold text-ink mb-5">{work.title}</h2>
 
-      {/* 描述 */}
       {work.description && (
         <div className="mb-6 p-4 bg-bg-soft/40 border border-ink/5 rounded-xl">
           <div className="text-[11px] font-mono text-ink-soft/70 uppercase tracking-widest mb-2">
             // 描述
           </div>
-          <pre className="text-sm text-ink whitespace-pre-wrap font-mono leading-relaxed">
-            {work.description}
-          </pre>
+          <MarkdownRender content={work.description} />
         </div>
       )}
 
-      {/* 说明流 (notes) - 每条右边有 × 删除按钮 (admin) */}
       <div>
         <div className="text-[11px] font-mono text-ink-soft/70 uppercase tracking-widest mb-3 border-b border-ink/10 pb-2">
           // 说明 ({work.notes?.length ?? 0})
@@ -533,7 +848,11 @@ function DetailView({
                 key={n.id}
                 note={n}
                 canDelete={admin}
+                canEdit={admin}
                 onDelete={() => onDeleteNote(work.id, n.id)}
+                onEdit={async (content, files) => {
+                  await onEditNote(work.id, n.id, { content, files })
+                }}
               />
             ))}
           </div>
@@ -547,7 +866,7 @@ function DetailView({
   )
 }
 
-// ============ 编辑视图 (标题/描述可折叠编辑 + 说明只读 + 添加新说明) ============
+// ============ 编辑视图 (标题/描述可折叠 + 说明折叠 + 添加新说明 markdown toolbar) ============
 function EditView({
   work,
   admin,
@@ -571,7 +890,6 @@ function EditView({
 
   return (
     <>
-      {/* 顶部: 取消 (改动作废) */}
       <div className="flex items-center justify-between mb-6">
         <div className="text-xs font-mono text-ink-soft/70">
           // 编辑 #{String(work.id).padStart(5, '0')} · 当前未保存的标题/描述改动,点取消会丢
@@ -584,7 +902,6 @@ function EditView({
         </button>
       </div>
 
-      {/* 标题 (可点击折叠/展开编辑) */}
       <ClickToEditField
         label="标题"
         initial={work.title}
@@ -595,7 +912,6 @@ function EditView({
         }}
       />
 
-      {/* 描述 (可点击折叠/展开编辑) */}
       <ClickToEditField
         label="描述"
         initial={work.description || ''}
@@ -607,25 +923,32 @@ function EditView({
         }}
       />
 
-      {/* 说明 (只读) */}
-      <div className="mt-6">
-        <div className="text-[11px] font-mono text-ink-soft/70 uppercase tracking-widest mb-3 border-b border-ink/10 pb-2">
-          // 说明 ({work.notes?.length ?? 0}) · 只读,删除请回详情页
+      {/* 说明 (默认折叠, 点击展开看历史) */}
+      <details className="mt-6 group/notes">
+        <summary className="cursor-pointer text-[11px] font-mono text-ink-soft/70 uppercase tracking-widest border-b border-ink/10 pb-2 mb-3 flex items-center gap-2 select-none hover:text-ink transition">
+          <span className="transition group-open/notes:rotate-90 inline-block">▸</span>
+          <span>说明 ({work.notes?.length ?? 0}) · 点击展开历史</span>
+        </summary>
+        <div className="space-y-4">
+          {work.notes && work.notes.length > 0 ? (
+            work.notes.map((n) => (
+              <NoteCard
+                key={n.id}
+                note={n}
+                canDelete={false}
+                canEdit={false}
+                onDelete={() => {}}
+                onEdit={async () => {}}
+              />
+            ))
+          ) : (
+            <div className="text-center py-6 text-ink-soft/50 text-sm">
+              还没有说明
+            </div>
+          )}
         </div>
-        {work.notes && work.notes.length > 0 ? (
-          <div className="space-y-4">
-            {work.notes.map((n) => (
-              <NoteCard key={n.id} note={n} canDelete={false} onDelete={() => {}} />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-6 text-ink-soft/50 text-sm">
-            还没有说明
-          </div>
-        )}
-      </div>
+      </details>
 
-      {/* 添加新说明表单 (admin only) */}
       {admin && (
         <div className="mt-6">
           <AddNoteForm
@@ -658,33 +981,29 @@ function ClickToEditField({
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
 
-  // 每次 initial 变化 (切换 work) 重置
   useEffect(() => {
     setValue(initial)
   }, [initial])
 
   function startEdit() {
-    setValue(initial)  // 重置回原值 (丢弃之前可能的改)
+    setValue(initial)
     setEditing(true)
-    // 下一帧 focus
     setTimeout(() => inputRef.current?.focus(), 0)
   }
 
   function cancelEdit() {
-    setValue(initial)  // 恢复原值 (丢弃本次未保存的改)
+    setValue(initial)
     setEditing(false)
   }
 
   async function save() {
     if (value === initial) {
-      // 没改,直接关闭
       setEditing(false)
       return
     }
     setSaving(true)
     try {
       await onSave(value)
-      // 成功后 setEditing(false) - 但 onSave 完成后 work 重新 load, initial 变, useEffect 会 sync
       setEditing(false)
     } catch (err: any) {
       alert('保存失败: ' + (err.message || err))
@@ -694,7 +1013,6 @@ function ClickToEditField({
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
-    // Ctrl+Enter (textarea) or Enter (input 不行) 保存
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       save()
@@ -758,7 +1076,6 @@ function ClickToEditField({
     )
   }
 
-  // 折叠态: 点击 label/内容 展开
   return (
     <div className="mb-4 group">
       <div className="text-[11px] font-mono text-ink-soft/70 uppercase tracking-widest mb-1.5">
@@ -793,200 +1110,346 @@ function ClickToEditField({
   )
 }
 
-function NoteCard({
-  note,
-  canDelete,
-  onDelete,
-}: {
-  note: WorkNote
-  canDelete: boolean
-  onDelete: () => void
-}) {
+
+
+// ============ Markdown 渲染 ============
+function MarkdownRender({ content }: { content: string }) {
+  if (!content.trim()) return null
   return (
-    <article className="border-l-2 border-ink/10 pl-4 py-2">
-      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
-        <div className="text-[11px] font-mono text-ink-soft/60">
-          #{String(note.id).padStart(3, '0')} · {formatNoteTime(note.created_at)}
-        </div>
-        {canDelete && (
-          <button
-            onClick={onDelete}
-            className="text-[11px] text-ink-soft/50 hover:text-accent transition"
-            title="删除这条说明"
-          >
-            × 删除
-          </button>
-        )}
-      </div>
-      {note.content && (
-        <pre className="text-sm text-ink whitespace-pre-wrap font-mono leading-relaxed mb-3">
-          {note.content}
-        </pre>
-      )}
-      {note.images.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {note.images.map((url, i) => (
-            <a
-              key={i}
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              className="block rounded-lg border border-ink/10 overflow-hidden hover:shadow-lg transition"
-            >
-              <img src={url} alt="" className="w-full h-auto" loading="lazy" />
-            </a>
-          ))}
-        </div>
-      )}
-    </article>
+    <div className="md text-sm leading-relaxed">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // 链接新窗口打开
+          a: ({ node, ...props }) => (
+            <a {...props} target="_blank" rel="noreferrer" className="text-accent hover:underline" />
+          ),
+          // 表格样式
+          table: ({ node, ...props }) => (
+            <div className="my-2 overflow-x-auto">
+              <table {...props} className="text-sm border-collapse border border-ink/20" />
+            </div>
+          ),
+          th: ({ node, ...props }) => (
+            <th {...props} className="border border-ink/20 px-2 py-1 bg-bg-soft/60 text-left font-semibold" />
+          ),
+          td: ({ node, ...props }) => (
+            <td {...props} className="border border-ink/20 px-2 py-1" />
+          ),
+          // 标题
+          h1: ({ node, ...props }) => (
+            <h1 {...props} className="text-xl font-bold text-ink mt-4 mb-2 first:mt-0" />
+          ),
+          h2: ({ node, ...props }) => (
+            <h2 {...props} className="text-lg font-bold text-ink mt-3 mb-2 first:mt-0" />
+          ),
+          h3: ({ node, ...props }) => (
+            <h3 {...props} className="text-base font-bold text-ink mt-3 mb-1 first:mt-0" />
+          ),
+          // 段落
+          p: ({ node, ...props }) => (
+            <p {...props} className="my-2 first:mt-0 last:mb-0" />
+          ),
+          // 列表
+          ul: ({ node, ...props }) => (
+            <ul {...props} className="list-disc list-outside ml-5 my-2 space-y-1" />
+          ),
+          ol: ({ node, ...props }) => (
+            <ol {...props} className="list-decimal list-outside ml-5 my-2 space-y-1" />
+          ),
+          // 引用
+          blockquote: ({ node, ...props }) => (
+            <blockquote {...props} className="border-l-4 border-ink/20 pl-3 my-2 text-ink-soft italic" />
+          ),
+          // 代码块
+          code: ({ node, className, children, ...props }) => {
+            const isBlock = className?.includes('language-')
+            return isBlock ? (
+              <code {...props} className="block bg-bg-soft/60 p-2 rounded text-xs font-mono overflow-x-auto my-2">
+                {children}
+              </code>
+            ) : (
+              <code {...props} className="px-1 py-0.5 bg-bg-soft/60 rounded text-xs font-mono">
+                {children}
+              </code>
+            )
+          },
+          // 分隔线
+          hr: ({ node, ...props }) => <hr {...props} className="my-3 border-ink/10" />,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
   )
 }
 
+// ============ Markdown 工具栏 (参考公司 ticket 风格: 段落下拉 + 格式按钮) ============
+type BlockType = 'p' | 'h1' | 'h2' | 'h3'
+
+function MarkdownToolbar({
+  textareaRef,
+  value,
+  onChange,
+}: {
+  textareaRef: React.RefObject<HTMLTextAreaElement>
+  value: string
+  onChange: (v: string) => void
+}) {
+  const [blockOpen, setBlockOpen] = useState(false)
+
+  // 在光标位置插入文本
+  function insertAtCursor(text: string, cursorOffset = 0) {
+    const ta = textareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const before = value.substring(0, start)
+    const after = value.substring(end)
+    const newVal = before + text + after
+    onChange(newVal)
+    // 下一帧 focus + 设光标
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+        textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + text.length + cursorOffset
+      }
+    }, 0)
+  }
+
+  // 包住选中文本 (粗体/斜体/代码)
+  function wrapSelection(prefix: string, suffix: string, placeholder: string) {
+    const ta = textareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const selected = value.substring(start, end) || placeholder
+    const text = prefix + selected + suffix
+    insertAtCursor(text)
+  }
+
+  // 在新行插入 (列表/引用)
+  function insertLinePrefix(prefix: string) {
+    const ta = textareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    // 找到当前行首
+    const before = value.substring(0, start)
+    const lineStart = before.lastIndexOf('\n') + 1
+    const linePrefix = value.substring(lineStart, start)
+    // 如果当前行已有内容, prefix 加在行首
+    if (linePrefix.length === 0) {
+      insertAtCursor(prefix)
+    } else {
+      // 在行首插 prefix
+      const newVal = value.substring(0, lineStart) + prefix + value.substring(lineStart)
+      onChange(newVal)
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus()
+          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + prefix.length
+        }
+      }, 0)
+    }
+  }
+
+  // 块级 (段落 / 标题)
+  function insertBlock(type: BlockType) {
+    const ta = textareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const before = value.substring(0, start)
+    const after = value.substring(start)
+    const lineStart = before.lastIndexOf('\n') + 1
+    const lineEnd = after.indexOf('\n')
+    const currentLine = after.substring(0, lineEnd === -1 ? after.length : lineEnd)
+    // 去掉当前行已有的 # 前缀
+    const cleanedLine = currentLine.replace(/^#+\s*/, '')
+    const newPrefix = type === 'p' ? '' : '#'.repeat(type === 'h1' ? 1 : type === 'h2' ? 2 : 3) + ' '
+    const newCurrentLine = newPrefix + cleanedLine
+    const newVal = value.substring(0, lineStart) + newCurrentLine + after.substring(currentLine.length)
+    onChange(newVal)
+    setBlockOpen(false)
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+        textareaRef.current.selectionStart = textareaRef.current.selectionEnd = lineStart + newCurrentLine.length
+      }
+    }, 0)
+  }
+
+  // 表格: 3x3 模板
+  function insertTable() {
+    const template = `
+| 列1 | 列2 | 列3 |
+| --- | --- | --- |
+|  |  |  |
+|  |  |  |
+`
+    insertAtCursor(template)
+  }
+
+  // 代码块
+  function insertCodeBlock() {
+    const template = '\n```\n\n```\n'
+    insertAtCursor(template, -4)  // 光标在 ``` 中间
+  }
+
+  // 链接
+  function insertLink() {
+    const ta = textareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const selected = value.substring(start, end) || '链接文字'
+    insertAtCursor(`[${selected}](https://)`, -1)  // 光标在 url 末尾
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 bg-bg-soft/60 border border-ink/10 rounded-t-md border-b-0">
+      {/* 段落下拉 (参考公司 ticket 风格) */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setBlockOpen(!blockOpen)}
+          className="px-2.5 py-1 text-xs font-semibold text-ink-soft hover:bg-bg-soft rounded transition flex items-center gap-1 min-w-[60px] justify-between"
+        >
+          <span>段落</span>
+          <span className="text-[10px]">▾</span>
+        </button>
+        {blockOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-10"
+              onClick={() => setBlockOpen(false)}
+            />
+            <div className="absolute left-0 top-full mt-0.5 bg-white border border-ink/20 rounded shadow-lg z-20 min-w-[100px] py-1">
+              <button
+                type="button"
+                onClick={() => insertBlock('p')}
+                className="w-full text-left px-3 py-1 text-sm hover:bg-bg-soft text-ink"
+              >
+                段落
+              </button>
+              <button
+                type="button"
+                onClick={() => insertBlock('h1')}
+                className="w-full text-left px-3 py-1 text-lg font-bold hover:bg-bg-soft text-ink"
+              >
+                标题 1
+              </button>
+              <button
+                type="button"
+                onClick={() => insertBlock('h2')}
+                className="w-full text-left px-3 py-1 text-base font-bold hover:bg-bg-soft text-ink"
+              >
+                标题 2
+              </button>
+              <button
+                type="button"
+                onClick={() => insertBlock('h3')}
+                className="w-full text-left px-3 py-1 text-sm font-bold hover:bg-bg-soft text-ink"
+              >
+                标题 3
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="w-px h-5 bg-ink/10 mx-1" />
+
+      {/* 格式 */}
+      <ToolbarButton title="粗体 (**)" onClick={() => wrapSelection('**', '**', '粗体')}>
+        <span className="font-bold">B</span>
+      </ToolbarButton>
+      <ToolbarButton title="斜体 (*)" onClick={() => wrapSelection('*', '*', '斜体')}>
+        <span className="italic">I</span>
+      </ToolbarButton>
+      <ToolbarButton title="删除线 (~~)" onClick={() => wrapSelection('~~', '~~', '删除线')}>
+        <span className="line-through text-xs">S</span>
+      </ToolbarButton>
+      <ToolbarButton title="行内代码 (`)" onClick={() => wrapSelection('`', '`', 'code')}>
+        <span className="font-mono text-xs">{'<>'}</span>
+      </ToolbarButton>
+
+      <div className="w-px h-5 bg-ink/10 mx-1" />
+
+      {/* 列表 */}
+      <ToolbarButton title="无序列表 (-)" onClick={() => insertLinePrefix('- ')}>
+        <span className="text-base leading-none">•</span>
+      </ToolbarButton>
+      <ToolbarButton title="有序列表 (1.)" onClick={() => insertLinePrefix('1. ')}>
+        <span className="text-xs">1.</span>
+      </ToolbarButton>
+      <ToolbarButton title="引用 (>)" onClick={() => insertLinePrefix('> ')}>
+        <span className="text-base leading-none">❝</span>
+      </ToolbarButton>
+
+      <div className="w-px h-5 bg-ink/10 mx-1" />
+
+      {/* 链接 / 代码块 / 表格 */}
+      <ToolbarButton title="代码块 (```)" onClick={insertCodeBlock}>
+        <span className="text-xs font-mono">{'</>'}</span>
+      </ToolbarButton>
+      <ToolbarButton title="链接 [text](url)" onClick={insertLink}>
+        <span className="text-base leading-none">🔗</span>
+      </ToolbarButton>
+      <ToolbarButton title="插入表格" onClick={insertTable}>
+        <span className="text-sm">⊞</span>
+      </ToolbarButton>
+    </div>
+  )
+}
+
+function ToolbarButton({
+  children,
+  onClick,
+  title,
+}: {
+  children: React.ReactNode
+  onClick: () => void
+  title: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="w-7 h-7 text-ink-soft hover:bg-bg-soft hover:text-ink rounded flex items-center justify-center transition"
+    >
+      {children}
+    </button>
+  )
+}
+
+// ============ 添加新说明表单 (NoteEditor 的薄 wrapper, 提交后跳回详情) ============
 function AddNoteForm({
   onSubmit,
 }: {
   onSubmit: (content: string, files: File[]) => Promise<void>
 }) {
-  const [content, setContent] = useState('')
-  const [files, setFiles] = useState<File[]>([])
-  const [previews, setPreviews] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  function pickFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = Array.from(e.target.files || [])
-    if (picked.length === 0) return
-    const valid: File[] = []
-    const skipped: string[] = []
-    for (const f of picked) {
-      if (!/^image\//.test(f.type)) {
-        skipped.push(f.name)
-        continue
-      }
-      if (f.size > 5 * 1024 * 1024) {
-        skipped.push(`${f.name} (超过 5MB)`)
-        continue
-      }
-      valid.push(f)
-    }
-    if (skipped.length > 0) {
-      alert('以下文件已跳过 (非图片或超过 5MB):\n' + skipped.join('\n'))
-    }
-    if (valid.length === 0) return
-    setFiles((prev) => [...prev, ...valid])
-    Promise.all(valid.map(fileToPreview)).then((p) => {
-      setPreviews((prev) => [...prev, ...p])
-    })
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
-  function removeFile(i: number) {
-    setFiles((prev) => prev.filter((_, idx) => idx !== i))
-    setPreviews((prev) => prev.filter((_, idx) => idx !== i))
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!content.trim() && files.length === 0) {
-      alert('内容或图片至少有一个')
-      return
-    }
-    setSubmitting(true)
-    try {
-      await onSubmit(content.trim(), files)
-      // 父组件成功后会自动跳回详情, 这里不用清表单
-    } catch (err: any) {
-      alert('提交失败: ' + (err.message || err))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 p-5 bg-bg-soft/40 border border-ink/10 rounded-2xl">
-      <div className="text-xs font-mono text-ink-soft/70">// 添加新说明 (提交后自动跳回详情)</div>
-
-      <textarea
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        rows={4}
-        placeholder="这次又发现了什么? 写下来,以后翻。"
-        disabled={submitting}
-        className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-md focus:outline-none focus:border-ink/30 resize-y disabled:opacity-50 font-mono"
+    <div className="p-5 bg-bg-soft/40 border border-ink/10 rounded-2xl">
+      <NoteEditor
+        initialContent=""
+        initialImages={[]}
+        submitting={submitting}
+        label="// 添加新说明 (提交后自动跳回详情)"
+        submitLabel="📤 提交说明"
+        showCancel={false}
+        onSave={async (content, files) => {
+          setSubmitting(true)
+          try {
+            await onSubmit(content, files)
+          } catch (err: any) {
+            alert('提交失败: ' + (err.message || err))
+            setSubmitting(false)
+          }
+        }}
+        onCancel={() => {}}
       />
-
-      <div>
-        <div className="flex items-baseline justify-between mb-1.5">
-          <label className="text-xs font-mono text-ink-soft uppercase tracking-widest">
-            截图 (可选,单张 ≤ 5MB)
-          </label>
-          {files.length > 0 && !submitting && (
-            <button
-              type="button"
-              onClick={() => {
-                setFiles([])
-                setPreviews([])
-              }}
-              className="text-[11px] text-ink-soft hover:text-accent transition"
-            >
-              × 清空
-            </button>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={submitting}
-          className="w-full p-3 border-2 border-dashed border-ink/20 rounded-xl hover:border-accent/40 hover:bg-accent/5 transition flex flex-col items-center gap-1 disabled:opacity-50"
-        >
-          <div className="text-xl">📷</div>
-          <div className="text-sm font-semibold text-ink">
-            {files.length === 0 ? '选择截图' : '继续添加'}
-          </div>
-          <div className="text-[11px] text-ink-soft/70 font-mono">
-            当前 {files.length} 张 · 可一次选多张
-          </div>
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={pickFiles}
-          className="hidden"
-        />
-        {previews.length > 0 && (
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
-            {previews.map((p, i) => (
-              <div
-                key={i}
-                className="relative aspect-square rounded-lg overflow-hidden border border-ink/10 group"
-              >
-                <img src={p} alt="" className="w-full h-full object-cover" />
-                {!submitting && (
-                  <button
-                    type="button"
-                    onClick={() => removeFile(i)}
-                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="flex justify-end pt-1">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="px-5 py-2 text-sm font-semibold text-white bg-accent rounded-md hover:bg-accent/90 transition disabled:opacity-50"
-        >
-          {submitting ? '提交中…' : '📤 提交说明'}
-        </button>
-      </div>
-    </form>
+    </div>
   )
 }
