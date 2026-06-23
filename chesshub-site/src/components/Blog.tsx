@@ -26,8 +26,8 @@ const entranceCards: EntranceCard[] = [
   },
   {
     date: '2026.06',
-    title: '去过的地方',
-    category: '旅行',
+    title: '生活随笔',
+    category: '生活',
     href: '/travel/',
     bg: 'linear-gradient(135deg, #6a8a6a 0%, #4a6a4a 100%)',
     emoji: '🏔️',
@@ -42,7 +42,7 @@ export default function Blog() {
         <h2 className="text-3xl md:text-4xl font-extrabold text-ink">
           博客<span className="text-accent">.</span>
         </h2>
-        <p className="mt-3 text-ink-soft">收藏 · 工作 · 旅行 · 生活</p>
+        <p className="mt-3 text-ink-soft">收藏 · 工作 · 生活</p>
       </div>
 
       <div className="grid sm:grid-cols-2 md:grid-cols-2 gap-4 max-w-2xl mx-auto">

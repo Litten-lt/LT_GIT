@@ -251,11 +251,11 @@ export default function TravelPage() {
         <div className="text-center mb-10">
           <p className="text-xs font-mono text-accent mb-3 tracking-widest">/ TRAVEL</p>
           <h1 className="text-4xl md:text-5xl font-extrabold text-ink">
-            去过的地方<span className="text-accent">.</span>
+            生活随笔<span className="text-accent">.</span>
           </h1>
           <p className="mt-4 text-ink-soft max-w-xl mx-auto leading-relaxed">
-            记录走过的路。
-            每条都附上时间、地点和一路的照片,慢慢写。
+            日常随便记。
+            想到啥写啥,随手拍的照片都收在这。
           </p>
         </div>
 
