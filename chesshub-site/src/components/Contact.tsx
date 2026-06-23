@@ -130,7 +130,7 @@ function ContactItem({
             {copied ? '✓ 已复制' : value}
           </div>
           {copy && !copied && (
-            <div className="text-[10px] text-accent/70 font-mono mt-0.5">// 点击复制</div>
+            <div className="text-[10px] text-accent/70 font-mono mt-0.5">点击复制</div>
           )}
         </div>
       </div>

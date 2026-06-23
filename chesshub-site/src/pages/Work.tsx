@@ -297,9 +297,6 @@ function ListView({
         </div>
       )}
 
-      <div className="mt-16 text-center text-xs font-mono text-ink-soft/40">
-        // 数据由后端 SQLite 存储 · 清理浏览器数据不影响
-      </div>
     </>
   )
 }
@@ -831,7 +828,7 @@ function DetailView({
       {work.description && (
         <div className="mb-6 p-4 bg-bg-soft/40 border border-ink/5 rounded-xl">
           <div className="text-[11px] font-mono text-ink-soft/70 uppercase tracking-widest mb-2">
-            // 描述
+            描述
           </div>
           <MarkdownRender content={work.description} />
         </div>
@@ -839,7 +836,7 @@ function DetailView({
 
       <div>
         <div className="text-[11px] font-mono text-ink-soft/70 uppercase tracking-widest mb-3 border-b border-ink/10 pb-2">
-          // 说明 ({work.notes?.length ?? 0})
+          说明 ({work.notes?.length ?? 0})
         </div>
         {work.notes && work.notes.length > 0 ? (
           <div className="space-y-4">

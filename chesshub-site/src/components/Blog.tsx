@@ -32,14 +32,6 @@ const entranceCards: EntranceCard[] = [
     bg: 'linear-gradient(135deg, #6a8a6a 0%, #4a6a4a 100%)',
     emoji: '🏔️',
   },
-  {
-    date: '2026.06',
-    title: '生活随笔',
-    category: '生活',
-    href: '/life/',
-    bg: 'linear-gradient(135deg, #c58582 0%, #a87070 100%)',
-    emoji: '☕',
-  },
 ]
 
 export default function Blog() {
@@ -72,16 +64,9 @@ export default function Blog() {
             </div>
             <div className="absolute bottom-4 left-4 right-4 text-white">
               <h3 className="text-base font-bold leading-snug drop-shadow">{c.title}</h3>
-              <p className="mt-1 text-xs opacity-80 font-mono">
-                {c.date} · → 进入
-              </p>
             </div>
           </a>
         ))}
-      </div>
-
-      <div className="mt-6 text-center text-xs font-mono text-ink-soft/50">
-        // 持续更新
       </div>
     </section>
   )

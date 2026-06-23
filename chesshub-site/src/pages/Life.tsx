@@ -480,9 +480,6 @@ export default function Life() {
           </div>
         )}
 
-        <div className="mt-16 text-center text-xs font-mono text-ink-soft/40">
-          // 数据由后端 SQLite 存储 · 清理浏览器数据不影响
-        </div>
       </div>
     </App>
   )
