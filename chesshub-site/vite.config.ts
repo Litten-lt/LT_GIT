@@ -15,6 +15,7 @@ export default defineConfig({
         login: resolve(__dirname, 'login.html'),
         life: resolve(__dirname, 'life.html'),
         work: resolve(__dirname, 'work.html'),
+        study: resolve(__dirname, 'study.html'),
       },
     },
   },

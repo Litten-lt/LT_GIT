@@ -5,7 +5,7 @@ import BackgroundPicker from './components/BackgroundPicker'
 import UsagePanel from './components/UsagePanel'
 
 type Props = {
-  current?: 'home' | 'travel' | 'blog' | 'figures' | 'life' | 'work'
+  current?: 'home' | 'travel' | 'blog' | 'figures' | 'life' | 'work' | 'study'
   children?: React.ReactNode
 }
 

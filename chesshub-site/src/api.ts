@@ -297,3 +297,91 @@ export function deleteWorkNote(workId: number, noteId: number) {
     method: 'DELETE',
   })
 }
+
+// ---------- 学习笔记 (studies / study_notes) ----------
+export type Study = {
+  id: number
+  title: string
+  description?: string
+  date: string
+  created_at: number
+  updated_at: number
+  note_count: number
+  notes?: StudyNote[]
+}
+
+export type StudyNote = {
+  id: number
+  study_id: number
+  content?: string
+  images: string[]  // 完整 URL
+  created_at: number
+}
+
+export function listStudies() {
+  return request<{ studies: Study[] }>('/studies')
+}
+
+export function getStudy(id: number) {
+  return request<{ study: Study }>(`/studies/${id}`)
+}
+
+export function createStudy(payload: {
+  title: string
+  description?: string
+}) {
+  return request<{ id: number }>('/studies', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteStudy(id: number) {
+  return request<{ ok: true }>(`/studies/${id}`, { method: 'DELETE' })
+}
+
+export function updateStudy(
+  id: number,
+  payload: {
+    title?: string
+    description?: string
+  },
+) {
+  return request<{ ok: true }>(`/studies/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+// ---------- study_notes ----------
+// 学习笔记 notes 不带图片(用户 2026-07-10 拍板),只存 markdown content
+export function addStudyNote(
+  studyId: number,
+  payload: { content: string },
+) {
+  const fd = new FormData()
+  fd.append('content', payload.content)
+  return request<{ id: number; images: string[] }>(`/studies/${studyId}/notes`, {
+    method: 'POST',
+    body: fd,
+  })
+}
+
+export function updateStudyNote(
+  studyId: number,
+  noteId: number,
+  payload: { content: string },
+) {
+  const fd = new FormData()
+  fd.append('content', payload.content)
+  return request<{ ok: true; images: string[] }>(
+    `/studies/${studyId}/notes/${noteId}`,
+    { method: 'PUT', body: fd },
+  )
+}
+
+export function deleteStudyNote(studyId: number, noteId: number) {
+  return request<{ ok: true }>(`/studies/${studyId}/notes/${noteId}`, {
+    method: 'DELETE',
+  })
+}
