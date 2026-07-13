@@ -646,7 +646,6 @@ function NoteEditor({
             onChange={(e) => setContent(e.target.value)}
             rows={6}
             disabled={submitting}
-            placeholder={`# 现象\n...\n\n## 排查\n...\n\n## 解决\n...`}
             className="w-full px-4 py-2.5 text-sm bg-white border border-ink/10 rounded-b-md focus:outline-none focus:border-ink/30 resize-y disabled:opacity-50 font-mono"
           />
         </>
