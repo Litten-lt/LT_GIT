@@ -104,6 +104,27 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_work_notes_work_id ON work_notes(work_id, created_at DESC);
 
+  -- 学习笔记 (study/study_notes) — 与 works/work_notes 同结构
+  CREATE TABLE IF NOT EXISTS studies (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    description TEXT,
+    date        TEXT NOT NULL,
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_studies_created ON studies(created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS study_notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    study_id    INTEGER NOT NULL,
+    content     TEXT,
+    images      TEXT NOT NULL DEFAULT '[]',
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_study_notes_study_id ON study_notes(study_id, created_at DESC);
+
   -- 全局设置 KV 表 (Hero 背景等)
   CREATE TABLE IF NOT EXISTS settings (
     key        TEXT PRIMARY KEY,
@@ -884,6 +905,218 @@ app.delete('/api/works/:id/notes/:nid', requireAuth, (req, res) => {
 
   db.prepare('DELETE FROM work_notes WHERE id = ?').run(noteId)
   db.prepare(`UPDATE works SET updated_at = strftime('%s','now') WHERE id = ?`).run(workId)
+  res.json({ ok: true })
+})
+
+// ---------- 学习笔记 (studies / study_notes) — 与 works 同结构 ----------
+
+// 列出所有 study (含 note_count)
+app.get('/api/studies', requireSession, (req, res) => {
+  const rows = db.prepare(`
+    SELECT s.id, s.title, s.description, s.date, s.created_at, s.updated_at,
+           (SELECT COUNT(*) FROM study_notes WHERE study_id = s.id) AS note_count
+    FROM studies s
+    ORDER BY s.created_at DESC
+  `).all()
+  res.json({ studies: rows })
+})
+
+// 详情 (含全部 notes, 按时间正序)
+app.get('/api/studies/:id', requireSession, (req, res) => {
+  const id = Number(req.params.id)
+  const s = db.prepare(`
+    SELECT id, title, description, date, created_at, updated_at FROM studies WHERE id = ?
+  `).get(id)
+  if (!s) return res.status(404).json({ error: '记录不存在' })
+
+  const notes = db.prepare(`
+    SELECT id, content, images, created_at FROM study_notes
+    WHERE study_id = ? ORDER BY created_at ASC
+  `).all(id)
+  for (const n of notes) {
+    try {
+      n.images = JSON.parse(n.images || '[]').map((fn) => `${PUBLIC_BASE_URL}/data/figures/${fn}`)
+    } catch {
+      n.images = []
+    }
+  }
+  res.json({ study: { ...s, notes, note_count: notes.length } })
+})
+
+// 新建 study (admin) - 极简: title + description (可空)
+app.post('/api/studies', requireAuth, (req, res) => {
+  const { title, description } = req.body || {}
+  if (!title || !title.trim()) {
+    return res.status(400).json({ error: '标题必填' })
+  }
+  const date = new Date().toISOString().slice(0, 7).replace('-', '.')
+  const result = db.prepare(`
+    INSERT INTO studies (title, description, date) VALUES (?, ?, ?)
+  `).run(title.trim(), description?.trim() || null, date)
+  res.json({ id: result.lastInsertRowid })
+})
+
+// 删除 study (admin) - 级联删 notes + 删 notes 的图
+app.delete('/api/studies/:id', requireAuth, (req, res) => {
+  const id = Number(req.params.id)
+  const s = db.prepare('SELECT id FROM studies WHERE id = ?').get(id)
+  if (!s) return res.status(404).json({ error: '记录不存在' })
+
+  const notes = db.prepare('SELECT images FROM study_notes WHERE study_id = ?').all(id)
+  for (const n of notes) {
+    try {
+      const imgs = JSON.parse(n.images || '[]')
+      for (const fn of imgs) fs.unlink(path.join(UPLOAD_DIR, fn), () => {})
+    } catch { /* ignore */ }
+  }
+
+  db.prepare('DELETE FROM studies WHERE id = ?').run(id)
+  res.json({ ok: true })
+})
+
+// 更新 study (admin) - 改 title + description
+app.put('/api/studies/:id', requireAuth, (req, res) => {
+  const id = Number(req.params.id)
+  const s = db.prepare('SELECT id FROM studies WHERE id = ?').get(id)
+  if (!s) return res.status(404).json({ error: '记录不存在' })
+
+  const { title, description } = req.body || {}
+  if (title !== undefined && !title.trim()) {
+    return res.status(400).json({ error: '标题不能为空' })
+  }
+
+  const sets = []
+  const args = []
+  if (title !== undefined) { sets.push('title = ?'); args.push(title.trim()) }
+  if (description !== undefined) { sets.push('description = ?'); args.push(description?.trim() || null) }
+  if (sets.length === 0) {
+    return res.status(400).json({ error: '没有要更新的字段' })
+  }
+
+  sets.push("updated_at = strftime('%s','now')")
+  args.push(id)
+  db.prepare(`UPDATE studies SET ${sets.join(', ')} WHERE id = ?`).run(...args)
+  res.json({ ok: true })
+})
+
+// 添加一条说明 (admin)
+app.post('/api/studies/:id/notes', requireAuth, uploadLimiter, (req, res) => {
+  const studyId = Number(req.params.id)
+  const s = db.prepare('SELECT id FROM studies WHERE id = ?').get(studyId)
+  if (!s) return res.status(404).json({ error: 'study 不存在' })
+
+  upload.array('images', 5)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || '上传失败' })
+    ;(async () => {
+      try {
+        const content = req.body?.content?.trim() || null
+        const files = req.files || []
+
+        if (!content && files.length === 0) {
+          return res.status(400).json({ error: '内容或图片至少有一个' })
+        }
+
+        for (const f of files) {
+          try {
+            const buf = await readFile(f.path)
+            const ft = await fileTypeFromBuffer(buf.slice(0, 4100))
+            if (!ft || !ALLOWED_MIMES.test(ft.mime) || f.originalname.toLowerCase().endsWith('.svg')) {
+              for (const f2 of files) await unlink(f2.path).catch(() => {})
+              return res.status(400).json({ error: `${f.originalname} 文件格式不符` })
+            }
+          } catch (e) {
+            for (const f2 of files) await unlink(f2.path).catch(() => {})
+            req.log?.error({ err: e }, 'magic bytes check failed')
+            return res.status(500).json({ error: '文件校验失败' })
+          }
+        }
+
+        const uploadedFiles = files.map((f) => f.filename)
+        const result = db.prepare(`
+          INSERT INTO study_notes (study_id, content, images) VALUES (?, ?, ?)
+        `).run(studyId, content, JSON.stringify(uploadedFiles))
+
+        db.prepare(`UPDATE studies SET updated_at = strftime('%s','now') WHERE id = ?`).run(studyId)
+        res.json({ id: result.lastInsertRowid, images: uploadedFiles })
+      } catch (e) {
+        req.log?.error({ err: e, studyId }, 'POST /api/studies/:id/notes failed')
+        res.status(500).json({ error: '服务器内部错误' })
+      }
+    })()
+  })
+})
+
+// 改一条说明 (admin)
+app.put('/api/studies/:id/notes/:nid', requireAuth, uploadLimiter, (req, res) => {
+  const studyId = Number(req.params.id)
+  const noteId = Number(req.params.nid)
+  const n = db.prepare(`
+    SELECT id, images FROM study_notes WHERE id = ? AND study_id = ?
+  `).get(noteId, studyId)
+  if (!n) return res.status(404).json({ error: 'note 不存在' })
+
+  upload.array('images', 5)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || '上传失败' })
+    ;(async () => {
+      try {
+        const content = req.body?.content?.trim() || null
+        const files = req.files || []
+
+        if (!content && files.length === 0) {
+          return res.status(400).json({ error: '内容或图片至少有一个' })
+        }
+
+        for (const f of files) {
+          try {
+            const buf = await readFile(f.path)
+            const ft = await fileTypeFromBuffer(buf.slice(0, 4100))
+            if (!ft || !ALLOWED_MIMES.test(ft.mime) || f.originalname.toLowerCase().endsWith('.svg')) {
+              for (const f2 of files) await unlink(f2.path).catch(() => {})
+              return res.status(400).json({ error: `${f.originalname} 文件格式不符` })
+            }
+          } catch (e) {
+            for (const f2 of files) await unlink(f2.path).catch(() => {})
+            req.log?.error({ err: e }, 'magic bytes check failed')
+            return res.status(500).json({ error: '文件校验失败' })
+          }
+        }
+
+        const oldImages = JSON.parse(n.images || '[]')
+        if (files.length > 0) {
+          for (const fn of oldImages) fs.unlink(path.join(UPLOAD_DIR, fn), () => {})
+        }
+        const newImages = files.length > 0 ? files.map((f) => f.filename) : oldImages
+
+        db.prepare(`
+          UPDATE study_notes SET content = ?, images = ? WHERE id = ?
+        `).run(content, JSON.stringify(newImages), noteId)
+
+        db.prepare(`UPDATE studies SET updated_at = strftime('%s','now') WHERE id = ?`).run(studyId)
+        res.json({ ok: true, images: newImages })
+      } catch (e) {
+        req.log?.error({ err: e, studyId, noteId }, 'PUT /api/studies/:id/notes/:nid failed')
+        res.status(500).json({ error: '服务器内部错误' })
+      }
+    })()
+  })
+})
+
+// 删一条说明 (admin)
+app.delete('/api/studies/:id/notes/:nid', requireAuth, (req, res) => {
+  const studyId = Number(req.params.id)
+  const noteId = Number(req.params.nid)
+  const n = db.prepare(`
+    SELECT id, images FROM study_notes WHERE id = ? AND study_id = ?
+  `).get(noteId, studyId)
+  if (!n) return res.status(404).json({ error: 'note 不存在' })
+
+  try {
+    const imgs = JSON.parse(n.images || '[]')
+    for (const fn of imgs) fs.unlink(path.join(UPLOAD_DIR, fn), () => {})
+  } catch { /* ignore */ }
+
+  db.prepare('DELETE FROM study_notes WHERE id = ?').run(noteId)
+  db.prepare(`UPDATE studies SET updated_at = strftime('%s','now') WHERE id = ?`).run(studyId)
   res.json({ ok: true })
 })
 

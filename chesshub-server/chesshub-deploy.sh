@@ -344,6 +344,7 @@ clean_orphans() {
 deploy_nginx() {
   log "写入 Nginx 配置 → $NGINX_CONF"
   cat > "$NGINX_CONF" <<NGINX_EOF
+# ===== HTTP default_server (IP 访问 + 其他 host,只服务静态) =====
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
@@ -404,9 +405,83 @@ server {
     location /figures { try_files \$uri /figures.html; }
     location /life    { try_files \$uri /life.html; }
     location /work    { try_files \$uri /work.html; }
+    location /study   { try_files \$uri /study.html; }
 
     access_log /var/log/nginx/chesshub.access.log;
     error_log  /var/log/nginx/chesshub.error.log;
+}
+
+# ===== HTTPS (chesshub.fun / www.chesshub.fun) — 2026-07-10 加上 =====
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name chesshub.fun www.chesshub.fun;
+
+    ssl_certificate     /etc/letsencrypt/live/chesshub.fun/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/chesshub.fun/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml image/jpeg image/png;
+    gzip_min_length 1000;
+
+    location /data/ {
+        alias /var/www/chesshub-data/figures/;
+        expires 30d;
+        add_header Cache-Control "public";
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:${BACKEND_PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_http_version 1.1;
+        client_max_body_size 10m;
+        proxy_read_timeout 60s;
+    }
+
+    root ${FRONTEND_ROOT};
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    location /gobang/ {
+        alias ${GOBANG_ROOT}/;
+        try_files \$uri \$uri/ /gobang/index.html;
+        index index.html;
+    }
+
+    location /login   { try_files \$uri /login.html; }
+    location /travel  { try_files \$uri /travel.html; }
+    location /blog    { try_files \$uri /blog.html; }
+    location /figures { try_files \$uri /figures.html; }
+    location /life    { try_files \$uri /life.html; }
+    location /work    { try_files \$uri /work.html; }
+    location /study   { try_files \$uri /study.html; }
+
+    access_log /var/log/nginx/chesshub.access.log;
+    error_log  /var/log/nginx/chesshub.error.log;
+}
+
+# ===== 80 -> 443 redirect (chesshub.fun 域名强制 HTTPS) =====
+server {
+    listen 80;
+    listen [::]:80;
+    server_name chesshub.fun www.chesshub.fun;
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
 NGINX_EOF
 
