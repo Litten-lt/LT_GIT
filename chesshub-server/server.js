@@ -30,7 +30,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
 const UPLOAD_DIR = process.env.UPLOAD_DIR || '/var/www/chesshub-data/figures'
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data')
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*'
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'http://159.75.97.172'
+// 留空 → 生成的 URL 是相对路径 (/data/figures/xxx.jpg),浏览器按当前页 origin 解析
+// 想要绝对 URL 时再显式设 PUBLIC_BASE_URL=https://your.domain
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || ''
 const NODE_ENV = process.env.NODE_ENV || 'development'
 
 // ---------- 日志 ----------
