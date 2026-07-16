@@ -1,10 +1,11 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import Life from './pages/Life'
+import LifeHub from './pages/LifeHub'
+import { ensurePublicSession } from './publicSession'
 import './index.css'
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <Life />
-  </React.StrictMode>,
-)
+ensurePublicSession().finally(() => {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode><LifeHub /></React.StrictMode>,
+  )
+})

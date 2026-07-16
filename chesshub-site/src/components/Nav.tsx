@@ -1,18 +1,16 @@
 const items = [
-  { label: '关于', href: '#about' },
-  { label: '博客', href: '#blog' },
-  { label: '联络我', href: '#contact' },
-  { label: '关注我', href: '#follow' },
+  { label: '工作与学习', href: '/journal.html' },
+  { label: '生活', href: '/life.html' },
+  { label: '联系', href: '/#contact' },
 ]
 
 export default function Nav() {
   return (
-    <nav className="border-y border-ink/10 bg-bg-soft/40">
-      <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-center gap-8 md:gap-12 text-sm font-medium text-ink-soft">
-        {items.map((it, i) => (
-          <a key={it.label} href={it.href} className="link-anim">
-            {it.label}
-            {i === 0 && <span className="ml-1 text-accent">_</span>}
+    <nav className="sticky top-0 z-30 border-y border-ink/10 bg-bg/90 backdrop-blur-md" aria-label="主要导航">
+      <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-center gap-6 sm:gap-10 md:gap-14 text-sm font-medium text-ink-soft overflow-x-auto">
+        {items.map((item) => (
+          <a key={item.label} href={item.href} className="link-anim focus-ring rounded-sm whitespace-nowrap py-1">
+            {item.label}
           </a>
         ))}
       </div>

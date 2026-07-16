@@ -263,7 +263,7 @@ export default function Figures() {
   }
 
   return (
-    <App>
+    <App current="figures">
       <div className="max-w-3xl mx-auto px-6 pt-12 pb-24">
         {/* 顶部介绍 */}
         <div className="text-center mb-10">

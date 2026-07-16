@@ -31,20 +31,16 @@ export default function App({ current = 'home', children }: Props) {
     return () => clearInterval(id)
   }, [])
 
-  // 守卫:未登录 → 跳 login.html
-  // 放第一行 useEffect 之前,同步检查
-  if (typeof window !== 'undefined' && !isLoggedIn()) {
-    window.location.replace('/login.html')
-    return (
-      <div className="min-h-screen flex items-center justify-center text-ink-soft text-sm">
-        跳转登录中…
-      </div>
-    )
-  }
-
+  const loggedIn = isLoggedIn()
   const role = getRole()
   const username = getUsername()
   const isAdmin = role === 'admin'
+  const showAdminSession = loggedIn && isAdmin
+  const parentLink = current === 'work' || current === 'study'
+    ? { href: '/journal.html', label: '工作与学习' }
+    : current === 'travel' || current === 'figures' || current === 'life'
+      ? { href: '/life.html', label: '生活分享' }
+      : null
 
   return (
     <div className="relative min-h-screen flex flex-col text-ink">
@@ -59,15 +55,9 @@ export default function App({ current = 'home', children }: Props) {
             LongTeng<span className="text-accent">.</span>
           </a>
           <div className="flex items-center gap-3 text-xs">
-            <span
-              className={`px-2 py-0.5 rounded-full font-mono ${
-                isAdmin
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-amber-100 text-amber-700'
-              }`}
-            >
-              {isAdmin ? '✓ Admin' : '👀 游客'}
-            </span>
+            {isAdmin && (
+              <span className="px-2 py-0.5 rounded-full font-mono bg-emerald-100 text-emerald-700">✓ Admin</span>
+            )}
             {isAdmin && (
               <>
                 <button
@@ -88,21 +78,31 @@ export default function App({ current = 'home', children }: Props) {
                 </button>
               </>
             )}
-            <span className="text-ink-soft hidden sm:inline">{username}</span>
+            {showAdminSession && <span className="text-ink-soft hidden sm:inline">{username}</span>}
             <span className="font-mono text-ink-soft/60 hidden md:inline">{time}</span>
-            <button
-              onClick={() => {
-                if (confirm('确认登出?')) {
-                  clearAuth()
-                  window.location.href = '/login.html'
-                }
-              }}
-              className="text-ink-soft hover:text-accent transition"
-            >
-              登出
-            </button>
+            {showAdminSession ? (
+              <button
+                onClick={() => {
+                  if (confirm('确认登出?')) {
+                    clearAuth()
+                    window.location.href = '/'
+                  }
+                }}
+                className="text-ink-soft hover:text-accent transition focus-ring rounded"
+              >登出</button>
+            ) : (
+              <a href="/login.html" className="text-ink-soft hover:text-accent transition focus-ring rounded">管理入口</a>
+            )}
           </div>
         </div>
+        {showAdminSession && parentLink && (
+          <div className="max-w-5xl mx-auto px-6 pb-3 flex items-center justify-between text-xs">
+            <a href={parentLink.href} className="text-ink-soft hover:text-accent focus-ring rounded">
+              ← 返回{parentLink.label}
+            </a>
+            <span className="font-mono text-emerald-700/70">MANAGEMENT MODE</span>
+          </div>
+        )}
       </header>
 
       <main className="flex-1">{children}</main>
@@ -123,3 +123,4 @@ export default function App({ current = 'home', children }: Props) {
     </div>
   )
 }
+

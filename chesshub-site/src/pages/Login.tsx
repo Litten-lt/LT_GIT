@@ -1,173 +1,102 @@
 import { useState } from 'react'
-import { redirectIfLoggedIn, setAuth } from '../auth'
-import { login as apiLogin, guestLogin } from '../api'
+import { isAdmin, setAuth } from '../auth'
+import { login as apiLogin } from '../api'
 
 export default function Login() {
-  // 已登录则跳走
-  if (redirectIfLoggedIn()) return null
+  if (isAdmin()) {
+    window.location.replace('/')
+    return null
+  }
 
-  const [mode, setMode] = useState<'choose' | 'admin'>('choose')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  async function handleAdminLogin(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleAdminLogin(event: React.FormEvent) {
+    event.preventDefault()
     setError('')
     setLoading(true)
     try {
-      const res = await apiLogin(username, password)
-      setAuth(res.token, res.role, res.username)
+      const result = await apiLogin(username, password)
+      setAuth(result.token, result.role, result.username)
       window.location.href = '/'
-    } catch (err: any) {
-      setError(err.message || '登录失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleGuest() {
-    setError('')
-    setLoading(true)
-    try {
-      const res = await guestLogin()
-      setAuth(res.token, res.role, res.username)
-      window.location.href = '/'
-    } catch (err: any) {
-      setError(err.message || '游客登录失败')
+    } catch (reason: any) {
+      setError(reason.message || '登录失败')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg px-6">
-      <div className="w-full max-w-md">
-        {/* Logo + 标题 */}
-        <div className="text-center mb-10">
-          <a
-            href="/"
-            className="inline-block font-serif text-3xl tracking-tight text-ink"
-            style={{ fontFamily: 'Fraunces, "Source Han Serif SC", Georgia, serif' }}
-          >
-            LongTeng<span className="text-accent">.</span>
-          </a>
-          <p className="mt-2 text-xs font-mono text-ink-soft/60 tracking-widest">
-            CHESSHUB / LOGIN
+    <main className="min-h-screen grid lg:grid-cols-[1.1fr_0.9fr] bg-bg">
+      <section className="hidden lg:flex relative overflow-hidden p-14 flex-col justify-between bg-ink text-white">
+        <div className="absolute inset-0 opacity-10 login-grid" />
+        <a href="/" className="relative font-serif text-3xl tracking-tight focus-ring rounded">
+          LongTeng<span className="text-accent">.</span>
+        </a>
+        <div className="relative max-w-xl">
+          <p className="text-xs font-mono tracking-[0.2em] text-white/50">PRIVATE STUDIO</p>
+          <h1 className="mt-6 text-5xl font-extrabold tracking-tight leading-tight">
+            内容在前台被阅读，<br />创作在这里发生。
+          </h1>
+          <p className="mt-6 max-w-md text-white/60 leading-relaxed">
+            这是网站的管理入口。普通访客无需登录即可浏览公开内容。
           </p>
         </div>
+        <p className="relative text-xs font-mono text-white/30">SHENZHEN · 2026</p>
+      </section>
 
-        {mode === 'choose' && (
-          <div className="space-y-4">
-            <h1 className="text-center text-xl font-bold text-ink mb-6">
-              请选择进入方式
-            </h1>
+      <section className="flex items-center justify-center px-6 py-16">
+        <div className="w-full max-w-sm">
+          <a href="/" className="lg:hidden inline-block font-serif text-3xl text-ink mb-12 focus-ring rounded">
+            LongTeng<span className="text-accent">.</span>
+          </a>
+          <p className="text-xs font-mono text-accent tracking-[0.18em]">/ ADMIN ACCESS</p>
+          <h2 className="mt-4 text-3xl font-extrabold text-ink">管理后台登录<span className="text-accent">。</span></h2>
+          <p className="mt-3 text-sm text-ink-soft leading-relaxed">登录后可以发布内容、上传图片并维护网站设置。</p>
 
-            <button
-              onClick={() => setMode('admin')}
-              className="w-full p-6 bg-white border-2 border-ink/10 rounded-2xl hover:border-accent/40 hover:shadow-[0_8px_24px_-12px_rgba(239,35,75,0.25)] transition text-left group"
-            >
-              <div className="flex items-start gap-4">
-                <div className="text-3xl">🔐</div>
-                <div className="flex-1">
-                  <h2 className="text-lg font-bold text-ink group-hover:text-accent transition">
-                    管理员登录
-                  </h2>
-                  <p className="text-sm text-ink-soft mt-1">
-                    输账号密码登录,可以发布手办、上传图片
-                  </p>
-                </div>
-                <div className="text-ink-soft/30 group-hover:text-accent group-hover:translate-x-1 transition">
-                  →
-                </div>
-              </div>
-            </button>
-
-            <button
-              onClick={handleGuest}
-              disabled={loading}
-              className="w-full p-6 bg-white border-2 border-ink/10 rounded-2xl hover:border-amber-500/40 hover:shadow-[0_8px_24px_-12px_rgba(217,119,6,0.25)] transition text-left group disabled:opacity-50"
-            >
-              <div className="flex items-start gap-4">
-                <div className="text-3xl">👀</div>
-                <div className="flex-1">
-                  <h2 className="text-lg font-bold text-ink group-hover:text-amber-600 transition">
-                    游客访问
-                  </h2>
-                  <p className="text-sm text-ink-soft mt-1">
-                    一键进入,浏览所有手办,但发表功能受限
-                  </p>
-                </div>
-                <div className="text-ink-soft/30 group-hover:text-amber-600 group-hover:translate-x-1 transition">
-                  →
-                </div>
-              </div>
-            </button>
-
-            {error && (
-              <p className="text-center text-xs text-accent font-mono mt-4">// {error}</p>
-            )}
-
-            <p className="text-center text-xs text-ink-soft/50 font-mono mt-8">
-              // 进去之后可以随时在右上角登出
-            </p>
-          </div>
-        )}
-
-        {mode === 'admin' && (
-          <form
-            onSubmit={handleAdminLogin}
-            className="bg-white border-2 border-ink/10 rounded-2xl p-8"
-          >
-            <h1 className="text-xl font-bold text-ink mb-1">管理员登录</h1>
-            <p className="text-xs text-ink-soft mb-6 font-mono">
-              // 输账号密码
-            </p>
-
-            <div className="space-y-3">
+          <form onSubmit={handleAdminLogin} className="mt-9 space-y-4">
+            <label className="block">
+              <span className="block mb-2 text-xs font-semibold text-ink-soft">账号</span>
               <input
                 type="text"
-                placeholder="账号"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-2.5 text-sm bg-bg border border-ink/10 rounded-md focus:outline-none focus:border-ink/30"
+                onChange={(event) => setUsername(event.target.value)}
+                autoComplete="username"
+                className="w-full px-4 py-3 bg-white/60 border border-ink/15 rounded-xl focus:outline-none focus:border-accent"
+                required
                 autoFocus
               />
+            </label>
+            <label className="block">
+              <span className="block mb-2 text-xs font-semibold text-ink-soft">密码</span>
               <input
                 type="password"
-                placeholder="密码"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2.5 text-sm bg-bg border border-ink/10 rounded-md focus:outline-none focus:border-ink/30"
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                className="w-full px-4 py-3 bg-white/60 border border-ink/15 rounded-xl focus:outline-none focus:border-accent"
+                required
               />
-              {error && (
-                <p className="text-xs text-accent font-mono">// {error}</p>
-              )}
-            </div>
+            </label>
 
-            <div className="mt-6 flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('choose')
-                  setError('')
-                }}
-                className="flex-1 py-2.5 text-sm text-ink-soft hover:text-ink transition"
-              >
-                ← 返回
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex-1 py-2.5 text-sm font-semibold text-white bg-ink rounded-md hover:bg-ink/85 transition disabled:opacity-50"
-              >
-                {loading ? '登录中…' : '登录'}
-              </button>
-            </div>
+            {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full disabled:opacity-50"
+            >
+              {loading ? '正在登录…' : '进入管理模式'}
+            </button>
           </form>
-        )}
-      </div>
-    </div>
+
+          <a href="/" className="mt-7 inline-block text-sm text-ink-soft hover:text-accent focus-ring rounded">
+            ← 返回公开网站
+          </a>
+        </div>
+      </section>
+    </main>
   )
 }
