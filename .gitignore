@@ -1,24 +1,25 @@
-# 部署/调试临时文件 (不要入库)
-deploy-*.py
-probe*.py
-check-*.mjs
-check-*.py
-chmod-deploy-sh.py
-final-check.py
-final-smoke.py
-magic-bytes-test.py
-setup-https.py
-diag-443.py
-debug-migration.py
-patch-deploy-sh.py
-repro-*.mjs
-deploy.sh.remote
-deploy-run.log
-tests/.test-data/
-chesshub-server/test-debug/
-chesshub-server/test-data/
-chesshub-server/test-uploads/
-chesshub-server/check-i-db.mjs
+# Dependencies and build output
+node_modules/
+dist/
 
-# 部署 tar 包 (本地打包用, 不入库, 用 `tar -czf` 重新生成即可)
-chesshub-*.tar.gz
+# Local configuration and runtime data
+.env
+!.env.example
+apps/api/data/
+apps/api/uploads/
+apps/api/tests/.test-data/
+apps/api/test-debug/
+apps/api/test-data/
+apps/api/test-uploads/
+
+# Generated deployment artifacts and local logs
+artifacts/
+*.tar.gz
+*.log
+
+# One-off diagnostics should live outside the repository
+probe*.py
+check-*.py
+check-*.mjs
+debug-*.py
+repro-*.mjs

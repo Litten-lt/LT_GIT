@@ -90,3 +90,4 @@ Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/opt/chesshub-server/server.js
 - `deploy-run.log` —— 第一次部署完整日志
 - `deploy.sh.remote` —— 远程 deploy.sh 备份 (21 KB)
 - `deploy-fix.log` —— (合并到 deploy-run.log 后的)
+

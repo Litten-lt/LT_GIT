@@ -98,7 +98,7 @@
 
 ## 修改清单
 
-### `chesshub-server/server.js` (1088 行)
+### `apps/api/server.js` (1088 行)
 - 顶部 import: 加 `rateLimit`, `fileTypeFromBuffer`, `pino`, `readFile/unlink`
 - 加 `NODE_ENV` 常量 + `logger` (pino, dev 环境用 pino-pretty)
 - **CORS 改白名单函数式 origin** (line 99-115): 不在白名单时 `cb(null, false)` 不设 ACAO;prod+`*` 时抛错
@@ -111,10 +111,10 @@
 - **加 404 handler** + **改全局 error handler** (兜底绝不漏 e.message, multer 错误用 statusCode)
 - **17 处 `console.*`** 全部替换为 `logger.info` / `logger.error` / `req.log.error`
 
-### `chesshub-server/package.json`
+### `apps/api/package.json`
 - 加依赖: `pino`, `pino-pretty`, `express-rate-limit`, `file-type`
 
-### `chesshub-server/.gitignore`
+### `apps/api/.gitignore`
 - 加 `tests/.test-data` (测试临时数据不进 git)
 
 ### 新增文件
@@ -169,3 +169,4 @@ ssh chesshub "curl -s https://chesshub.fun/api/health"
 3. **Magic bytes 校验在 multer 之后**: 已经存盘后才校验 + 删除。极端情况 (磁盘 IO 紧张) 可能短暂留有垃圾文件,但测试 C.6/C.7 验证了清理逻辑工作正常。
 4. **JWT cookie 化未做**: 按方案文档"放到 P1"决定,等加评论/支付/注册时再统一做。
 5. **D.3 在 Windows 跳过 bash 语法检查**: 服务器侧部署前可手动 `bash -n chesshub-backup.sh` 验证。
+

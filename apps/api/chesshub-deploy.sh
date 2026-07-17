@@ -697,9 +697,9 @@ ChessHub 一键部署脚本
 注意: 脚本自身有自保护机制,即使被自身 rm -rf 删了,退出时也会从 /tmp/ 备份恢复。
 
 准备:
-  1. 本地构建前端:   cd chesshub-site && npm run build
+  1. 本地构建前端:   cd apps/web && npm run build
   2. 打包前端:       tar -czf dist.tar.gz -C dist .
-  3. 打包后端:       cd chesshub-server && tar -czf server.tar.gz --exclude=node_modules --exclude=.env --exclude=data .
+  3. 打包后端:       cd apps/api && tar -czf server.tar.gz --exclude=node_modules --exclude=.env --exclude=data .
   4. 上传:           scp dist.tar.gz server.tar.gz root@${SERVER_IP}:/tmp/
   5. 重命名为:       mv /tmp/dist.tar.gz /tmp/chesshub-dist.tar.gz
                     mv /tmp/server.tar.gz /tmp/chesshub-server.tar.gz

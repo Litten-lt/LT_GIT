@@ -601,16 +601,19 @@ describe('G. GET 鉴权 - 防 curl 直打后端', () => {
   })
   after(async () => { await killServer(server) })
 
-  // 7 个 GET 端点: 没 token 全部 401
+  // 内容与账号接口需要 token；页面外观设置供公开首页读取。
   const protectedGets = [
     '/api/auth/me',
     '/api/figures',
     '/api/travels',
     '/api/notes',
     '/api/works',
+  ]
+  const publicGets = [
     '/api/settings/hero-bg',
     '/api/settings/about-photo',
   ]
+  const readableGets = [...protectedGets, ...publicGets]
 
   for (const path of protectedGets) {
     test(`G.1 无 token GET ${path} → 401`, async () => {
@@ -626,9 +629,15 @@ describe('G. GET 鉴权 - 防 curl 直打后端', () => {
     })
   }
 
-  test('G.3 admin token 能读所有 GET 端点', async () => {
+  for (const path of publicGets) {
+    test(`G.3 公开页面设置 GET ${path} 无需 token`, async () => {
+      const r = await req(PORT, path)
+      assert.equal(r.status, 200, `public GET ${path} should 200, got ${r.status}: ${r.text}`)
+    })
+  }
+  test('G.4 admin token 能读所有 GET 端点', async () => {
     const token = await loginAsAdmin(PORT)
-    for (const path of protectedGets) {
+    for (const path of readableGets) {
       const r = await req(PORT, path, {
         headers: { authorization: `Bearer ${token}` },
       })
@@ -636,11 +645,11 @@ describe('G. GET 鉴权 - 防 curl 直打后端', () => {
     }
   })
 
-  test('G.4 guest token 也能读 GET 端点 (产品意图: 游客可看内容)', async () => {
+  test('G.5 guest token 也能读 GET 端点 (产品意图: 游客可看内容)', async () => {
     const loginRes = await req(PORT, '/api/auth/guest', { method: 'POST' })
     const token = loginRes.body.token
     assert.ok(token, 'guest login should return token')
-    for (const path of protectedGets) {
+    for (const path of readableGets) {
       const r = await req(PORT, path, {
         headers: { authorization: `Bearer ${token}` },
       })
@@ -648,12 +657,12 @@ describe('G. GET 鉴权 - 防 curl 直打后端', () => {
     }
   })
 
-  test('G.5 /api/health 仍然公开 (不需要 token)', async () => {
+  test('G.6 /api/health 仍然公开 (不需要 token)', async () => {
     const r = await req(PORT, '/api/health')
     assert.equal(r.status, 200)
   })
 
-  test('G.6 guest 不能写 (POST/PUT/DELETE 仍要 admin)', async () => {
+  test('G.7 guest 不能写 (POST/PUT/DELETE 仍要 admin)', async () => {
     const loginRes = await req(PORT, '/api/auth/guest', { method: 'POST' })
     const token = loginRes.body.token
     const r = await req(PORT, '/api/figures', {
@@ -964,3 +973,5 @@ describe('I. 老 schema → 新 schema 数据迁移', () => {
     await killServer(server)
   })
 })
+
+
