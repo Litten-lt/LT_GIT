@@ -16,6 +16,11 @@ export default function AdminDashboard() {
   const [query, setQuery] = useState('')
   const [type, setType] = useState<'all' | ContentType>(initialType && labels[initialType] ? initialType : 'all')
   const [status, setStatus] = useState<'all' | 'draft' | 'published' | 'featured'>('all')
+  const returnTarget = initialType === 'work' || initialType === 'study'
+    ? { href: '/journal.html', label: '返回工作与学习' }
+    : initialType === 'figure' || initialType === 'travel' || initialType === 'note'
+      ? { href: '/life.html', label: '返回生活分享' }
+      : { href: '/', label: '返回主页' }
 
   async function load() { setLoading(true); try { setItems((await listAdminContent()).items) } finally { setLoading(false) } }
   useEffect(() => { if (!ensureLoggedIn()) return; if (!isAdmin()) { window.location.replace('/'); return }; load().catch((reason) => alert(reason.message || '读取内容失败')) }, [])
@@ -53,6 +58,7 @@ export default function AdminDashboard() {
   function toggleAll() { const keys = filtered.map(keyOf); setSelected(keys.every((key) => selected.has(key)) ? new Set() : new Set(keys)) }
 
   return <App current="admin"><div className="admin-dashboard">
+    <a className="dashboard-back" href={returnTarget.href}>← {returnTarget.label}</a>
     <section className="dashboard-hero"><div><p>/ CONTENT STUDIO</p><h1>内容控制台<span>。</span></h1><p className="dashboard-lead">公开页面只负责阅读，创作、编辑、状态与删除全部在这里完成。</p></div><div className="dashboard-total"><strong>{loading ? '—' : counts.total}</strong><span>全部内容</span></div></section>
     <section className="content-stats"><button onClick={() => setStatus('all')} className={status === 'all' ? 'active' : ''}><strong>{counts.total}</strong><span>全部</span></button><button onClick={() => setStatus('published')} className={status === 'published' ? 'active' : ''}><strong>{counts.published}</strong><span>已发布</span></button><button onClick={() => setStatus('draft')} className={status === 'draft' ? 'active' : ''}><strong>{counts.draft}</strong><span>草稿</span></button><button onClick={() => setStatus('featured')} className={status === 'featured' ? 'active' : ''}><strong>{counts.featured}</strong><span>精选</span></button></section>
     <section className="content-manager">
