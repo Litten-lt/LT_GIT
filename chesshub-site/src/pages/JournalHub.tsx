@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import App from '../App'
 import { getStudy, getWork, listStudies, listWorks, type Study, type Work } from '../api'
 import { isAdmin } from '../auth'
+import ReadingProgress from '../components/ReadingProgress'
 
 type Entry = {
   id: string
@@ -30,6 +31,7 @@ export default function JournalHub() {
   )
   const [detail, setDetail] = useState<Detail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     if (requestedKind && requestedId) {
@@ -58,10 +60,14 @@ export default function JournalHub() {
       .finally(() => setLoading(false))
   }, [])
 
-  const visible = useMemo(
-    () => filter === 'all' ? entries : entries.filter((entry) => entry.kind === filter),
-    [entries, filter],
-  )
+  const visible = useMemo(() => {
+    const keyword = query.trim().toLowerCase()
+    return entries.filter((entry) => {
+      const matchesFilter = filter === 'all' || entry.kind === filter
+      const matchesQuery = !keyword || (entry.title + ' ' + (entry.description || '')).toLowerCase().includes(keyword)
+      return matchesFilter && matchesQuery
+    })
+  }, [entries, filter, query])
 
   if (requestedKind && requestedId) {
     return <App><JournalDetail detail={detail} loading={loading} returnFilter={returnFilter} /></App>
@@ -91,6 +97,12 @@ export default function JournalHub() {
           )}
         </div>
 
+<label className="hub-search">
+          <span>搜索</span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题或摘要…" />
+          {query && <button onClick={() => setQuery('')} aria-label="清除搜索">×</button>}
+        </label>
+
         <section className="journal-list">
           {loading && <p className="hub-empty">正在整理记录…</p>}
           {!loading && visible.length === 0 && <p className="hub-empty">这个分类暂时还没有内容。</p>}
@@ -119,6 +131,7 @@ function JournalDetail({ detail, loading, returnFilter }: { detail: Detail | nul
   const item = detail.item
   return (
     <main className="hub-page reading-page">
+      <ReadingProgress />
       <a href={backHref} className="hub-back">← 返回工作与学习</a>
       <header className="reading-header">
         <span className={['kind-pill', detail.kind].join(' ')}>{detail.kind === 'work' ? 'FIELD / WORK' : 'LEARN / STUDY'}</span>
@@ -140,4 +153,5 @@ function JournalDetail({ detail, loading, returnFilter }: { detail: Detail | nul
     </main>
   )
 }
+
 

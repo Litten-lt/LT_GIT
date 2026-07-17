@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import App from '../App'
 import { listFigures, listNotes, listTravels, type Figure, type Note, type Travel } from '../api'
 import { isAdmin } from '../auth'
+import ReadingProgress from '../components/ReadingProgress'
 
 type LifeKind = 'figure' | 'travel' | 'note'
 type LifeEntry = {
@@ -28,6 +29,7 @@ export default function LifeHub() {
     initialFilter === 'figure' || initialFilter === 'travel' || initialFilter === 'note' ? initialFilter : 'all',
   )
   const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     Promise.all([listFigures(), listTravels(), listNotes()])
@@ -52,10 +54,14 @@ export default function LifeHub() {
   const requested = requestedKind && requestedId
     ? entries.find((entry) => entry.kind === requestedKind && entry.rawId === requestedId)
     : null
-  const visible = useMemo(
-    () => filter === 'all' ? entries : entries.filter((entry) => entry.kind === filter),
-    [entries, filter],
-  )
+  const visible = useMemo(() => {
+    const keyword = query.trim().toLowerCase()
+    return entries.filter((entry) => {
+      const matchesFilter = filter === 'all' || entry.kind === filter
+      const matchesQuery = !keyword || (entry.title + ' ' + entry.description + ' ' + entry.eyebrow).toLowerCase().includes(keyword)
+      return matchesFilter && matchesQuery
+    })
+  }, [entries, filter, query])
 
   if (requestedKind && requestedId) return <App><LifeDetail entry={requested || null} loading={loading} returnFilter={returnFilter} /></App>
 
@@ -74,6 +80,12 @@ export default function LifeHub() {
           ))}
           {isAdmin() && <div className="ml-auto flex gap-4 text-xs"><a href="/figures.html">管理模型</a><a href="/travel.html">管理旅行</a><a href="/notes.html">管理随笔</a></div>}
         </div>
+<label className="hub-search">
+          <span>搜索</span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索生活片段…" />
+          {query && <button onClick={() => setQuery('')} aria-label="清除搜索">×</button>}
+        </label>
+
         {loading && <p className="hub-empty">正在整理生活片段…</p>}
         {!loading && visible.length === 0 && <p className="hub-empty">这个分类暂时还没有内容。</p>}
         <section className="life-grid">
@@ -97,6 +109,7 @@ function LifeDetail({ entry, loading, returnFilter }: { entry: LifeEntry | null;
   if (!entry) return <main className="hub-page"><a href={backHref} className="hub-back">← 返回生活分享</a><p className="hub-empty">没有找到这条内容。</p></main>
   return (
     <main className="hub-page reading-page life-reading">
+      <ReadingProgress />
       <a href={backHref} className="hub-back">← 返回生活分享</a>
       <header className="reading-header">
         <span className="kind-pill">{entry.eyebrow}</span><h1>{entry.title}</h1>
@@ -107,4 +120,5 @@ function LifeDetail({ entry, loading, returnFilter }: { entry: LifeEntry | null;
     </main>
   )
 }
+
 

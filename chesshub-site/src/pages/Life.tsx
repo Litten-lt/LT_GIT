@@ -251,7 +251,7 @@ export default function Life() {
         <div className="text-center mb-10">
           <p className="text-xs font-mono text-accent mb-3 tracking-widest">/ LIFE</p>
           <h1 className="text-4xl md:text-5xl font-extrabold text-ink">
-            生活随笔<span className="text-accent">.</span>
+            随笔管理<span className="text-accent">.</span>
           </h1>
           <p className="mt-4 text-ink-soft max-w-xl mx-auto leading-relaxed">
             不一定有意义,但都是真实的日子。
@@ -553,3 +553,4 @@ function NoteCard({
     </article>
   )
 }
+

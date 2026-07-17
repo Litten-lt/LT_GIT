@@ -843,3 +843,195 @@ section[id] {
 }
 
 
+
+.project-showcase {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+.hub-search {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0 0 1.5rem;
+  border-bottom: 1px solid rgba(43, 42, 40, 0.16);
+  padding: 0.8rem 0.25rem;
+}
+
+.hub-search > span {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hub-search input {
+  min-width: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.hub-search input::placeholder { color: rgba(90, 87, 81, 0.55); }
+
+.hub-search button {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 50%;
+  color: var(--ink-soft);
+  font-size: 1.1rem;
+}
+
+.hub-search button:hover {
+  background: rgba(43, 42, 40, 0.07);
+  color: var(--accent);
+}
+
+.reading-progress {
+  position: fixed;
+  z-index: 60;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  pointer-events: none;
+}
+
+.reading-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 80ms linear;
+}
+
+@media (min-width: 900px) {
+  .project-showcase {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .project-showcase .project-card:first-child {
+    grid-column: 1 / -1;
+    min-height: 22rem;
+  }
+
+  .project-showcase .project-card:first-child > div:nth-child(2) {
+    max-width: 34rem;
+    margin-top: 6rem;
+  }
+
+  .project-showcase .project-card:first-child h3 {
+    max-width: 30rem;
+    font-size: 2rem;
+  }
+}
+
+/* Management surfaces share the public site's editorial language while keeping tools compact. */
+.hub-search + .journal-list {
+  border-top: 0;
+}
+
+.admin-surface {
+  background:
+    radial-gradient(circle at 85% 5%, rgba(194, 90, 74, 0.08), transparent 24rem),
+    var(--bg);
+}
+
+.admin-surface > div {
+  width: min(1120px, 100%);
+  max-width: 1120px !important;
+  padding-top: 2.5rem !important;
+}
+
+.admin-surface .text-center.mb-10 {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 2rem;
+  border: 1px solid rgba(43, 42, 40, 0.09);
+  border-radius: 1.5rem;
+  background: #ded2c2;
+  padding: clamp(1.5rem, 4vw, 2.75rem);
+  text-align: left;
+}
+
+.admin-surface .text-center.mb-10::after {
+  content: '';
+  position: absolute;
+  right: -4rem;
+  bottom: -7rem;
+  width: 16rem;
+  height: 16rem;
+  border: 1px solid rgba(43, 42, 40, 0.1);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2.5rem rgba(43, 42, 40, 0.025);
+}
+
+.admin-surface .text-center.mb-10 > * {
+  position: relative;
+  z-index: 1;
+}
+
+.admin-surface .text-center.mb-10 h1 {
+  font-family: 'Fraunces', 'Source Han Serif SC', Georgia, serif;
+  font-size: clamp(2rem, 4.5vw, 3.25rem) !important;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+}
+
+.admin-surface .text-center.mb-10 > p:last-child {
+  max-width: 40rem;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.admin-surface .flex.items-center.justify-between.mb-8 {
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(43, 42, 40, 0.1);
+  border-radius: 1rem;
+  background: rgba(255,255,255,0.36);
+  padding: 0.8rem 1rem;
+}
+
+.admin-surface form {
+  border-color: rgba(43, 42, 40, 0.12) !important;
+  border-radius: 1.5rem !important;
+  background: rgba(255, 255, 255, 0.52) !important;
+  box-shadow: 0 24px 60px -48px rgba(43, 42, 40, 0.65);
+}
+
+.admin-surface input,
+.admin-surface textarea,
+.admin-surface select {
+  border-color: rgba(43, 42, 40, 0.14) !important;
+  border-radius: 0.75rem !important;
+  background: rgba(255,255,255,0.72) !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.admin-surface input:focus,
+.admin-surface textarea:focus,
+.admin-surface select:focus {
+  border-color: rgba(194, 90, 74, 0.65) !important;
+  box-shadow: 0 0 0 3px rgba(194, 90, 74, 0.09);
+}
+
+.admin-surface button {
+  transition: transform 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.admin-surface button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.admin-surface .border-y.divide-y,
+.admin-surface .border-y {
+  border-color: rgba(43, 42, 40, 0.12);
+}
+
+@media (max-width: 640px) {
+  .admin-surface > div { padding-top: 1.25rem !important; }
+  .admin-surface .text-center.mb-10 { border-radius: 1.1rem; }
+}

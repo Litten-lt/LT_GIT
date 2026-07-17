@@ -104,7 +104,7 @@ export default function FeaturedProjects() {
         </p>
       </div>
 
-      <div className="mt-12 grid lg:grid-cols-3 gap-5">
+      <div className="project-showcase mt-12">
         {cards.slice(0, 3).map((project) => (
           <a key={project.type + project.index} href={project.href} className={['project-card', project.tone, 'focus-ring'].join(' ')}>
             <div className="flex items-start justify-between gap-4">
@@ -126,4 +126,5 @@ export default function FeaturedProjects() {
     </section>
   )
 }
+
 

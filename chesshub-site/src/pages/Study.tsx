@@ -232,7 +232,7 @@ function ListView({
       <div className="text-center mb-10">
         <p className="text-xs font-mono text-accent mb-3 tracking-widest">/ STUDY</p>
         <h1 className="text-4xl md:text-5xl font-extrabold text-ink">
-          学习<span className="text-accent">.</span>
+          学习管理<span className="text-accent">.</span>
         </h1>
         <p className="mt-4 text-ink-soft max-w-xl mx-auto leading-relaxed">
           学的过程笔记。每条一行,点进去看详情 + 反思/收获。
@@ -1351,3 +1351,4 @@ function AddNoteForm({
     </div>
   )
 }
+

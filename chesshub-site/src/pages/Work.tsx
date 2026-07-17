@@ -248,7 +248,7 @@ function ListView({
       <div className="text-center mb-10">
         <p className="text-xs font-mono text-accent mb-3 tracking-widest">/ WORK</p>
         <h1 className="text-4xl md:text-5xl font-extrabold text-ink">
-          工作<span className="text-accent">.</span>
+          工作管理<span className="text-accent">.</span>
         </h1>
         <p className="mt-4 text-ink-soft max-w-xl mx-auto leading-relaxed">
           调试踩坑笔记。每条 ticket 一行,点进去看详情 + 调查说明。
@@ -1449,3 +1449,4 @@ function AddNoteForm({
     </div>
   )
 }
+
