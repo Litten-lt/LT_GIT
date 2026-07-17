@@ -56,7 +56,9 @@ export function me() {
 }
 
 // ---------- 手办 ----------
-export type Figure = {
+export type ContentState = { status: 'draft' | 'published'; featured: number; pinned: number; updated_at?: number }
+
+export type Figure = ContentState & {
   id: number
   name: string
   brand?: string
@@ -117,7 +119,7 @@ export function filenameFromUrl(url: string): string {
 }
 
 // ---------- 旅行 ----------
-export type Travel = {
+export type Travel = ContentState & {
   id: number
   title: string
   location?: string
@@ -163,7 +165,7 @@ export function updateTravel(
 }
 
 // ---------- 生活笔记 ----------
-export type Note = {
+export type Note = ContentState & {
   id: number
   title: string
   scene?: string
@@ -209,7 +211,7 @@ export function updateNote(
 }
 
 // ---------- 工作(调试记录) ----------
-export type Work = {
+export type Work = ContentState & {
   id: number
   title: string
   description?: string
@@ -299,7 +301,7 @@ export function deleteWorkNote(workId: number, noteId: number) {
 }
 
 // ---------- 学习笔记 (studies / study_notes) ----------
-export type Study = {
+export type Study = ContentState & {
   id: number
   title: string
   description?: string
@@ -383,5 +385,29 @@ export function updateStudyNote(
 export function deleteStudyNote(studyId: number, noteId: number) {
   return request<{ ok: true }>(`/studies/${studyId}/notes/${noteId}`, {
     method: 'DELETE',
+  })
+}
+// ---------- 统一内容管理 ----------
+export type ContentType = 'work' | 'study' | 'figure' | 'travel' | 'note'
+export type AdminContentItem = ContentState & {
+  type: ContentType
+  id: number
+  title: string
+  date: string
+  created_at: number
+}
+
+export function listAdminContent() {
+  return request<{ items: AdminContentItem[] }>('/admin/content')
+}
+
+export function updateContentState(
+  type: ContentType,
+  id: number,
+  patch: Partial<Pick<ContentState, 'status' | 'featured' | 'pinned'>>,
+) {
+  return request<{ ok: true; status: 'draft' | 'published'; featured: number; pinned: number }>(`/admin/content/${type}/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
   })
 }

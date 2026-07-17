@@ -1,68 +1,94 @@
 import { useEffect, useMemo, useState } from 'react'
 import App from '../App'
-import { listFigures, listNotes, listStudies, listTravels, listWorks } from '../api'
+import { listAdminContent, updateContentState, type AdminContentItem, type ContentType } from '../api'
 import { ensureLoggedIn, isAdmin } from '../auth'
 
-type Section = {
-  key: string; eyebrow: string; title: string; description: string
-  href: string; newHref: string; publicHref: string; count: number
-  recent: string[]; tone: string
-}
+const labels: Record<ContentType, string> = { work: '工作', study: '学习', figure: '模型', travel: '旅行', note: '随笔' }
+const editPages: Record<ContentType, string> = { work: '/work.html', study: '/study.html', figure: '/figures.html', travel: '/travel.html', note: '/notes.html' }
+const publicPages: Record<ContentType, string> = { work: '/journal.html?type=work&id=', study: '/journal.html?type=study&id=', figure: '/life.html?type=figure&id=', travel: '/life.html?type=travel&id=', note: '/life.html?type=note&id=' }
 
 export default function AdminDashboard() {
+  const [items, setItems] = useState<AdminContentItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [counts, setCounts] = useState([0, 0, 0, 0, 0])
-  const [recent, setRecent] = useState<string[][]>([[], [], [], [], []])
+  const [saving, setSaving] = useState('')
+  const [query, setQuery] = useState('')
+  const [type, setType] = useState<'all' | ContentType>('all')
+  const [status, setStatus] = useState<'all' | 'draft' | 'published' | 'featured'>('all')
+
+  async function load() {
+    setLoading(true)
+    try { setItems((await listAdminContent()).items) }
+    finally { setLoading(false) }
+  }
 
   useEffect(() => {
     if (!ensureLoggedIn()) return
     if (!isAdmin()) { window.location.replace('/'); return }
-    Promise.all([listWorks(), listStudies(), listFigures(), listTravels(), listNotes()])
-      .then(([works, studies, figures, travels, notes]) => {
-        const groups = [works.works, studies.studies, figures.figures, travels.travels, notes.notes]
-        setCounts(groups.map((items) => items.length))
-        setRecent([
-          works.works.slice(0, 3).map((item) => item.title),
-          studies.studies.slice(0, 3).map((item) => item.title),
-          figures.figures.slice(0, 3).map((item) => item.name),
-          travels.travels.slice(0, 3).map((item) => item.title),
-          notes.notes.slice(0, 3).map((item) => item.title),
-        ])
-      })
-      .catch((reason) => setError(reason.message || '读取内容失败'))
-      .finally(() => setLoading(false))
+    load().catch((reason) => alert(reason.message || '读取内容失败'))
   }, [])
 
-  const sections = useMemo<Section[]>(() => [
-    { key: 'work', eyebrow: 'FIELD NOTES', title: '工作记录', description: '问题、调试过程与工程结论。', href: '/work.html', newHref: '/work.html?new=1', publicHref: '/journal.html?filter=work', count: counts[0], recent: recent[0], tone: 'dashboard-rust' },
-    { key: 'study', eyebrow: 'KNOWLEDGE', title: '学习笔记', description: '原理、方法和长期知识沉淀。', href: '/study.html', newHref: '/study.html?new=1', publicHref: '/journal.html?filter=study', count: counts[1], recent: recent[1], tone: 'dashboard-olive' },
-    { key: 'figure', eyebrow: 'COLLECTION', title: '模型手办', description: '收藏档案、照片与入手心得。', href: '/figures.html', newHref: '/figures.html?new=1', publicHref: '/life.html?filter=figure', count: counts[2], recent: recent[2], tone: 'dashboard-plum' },
-    { key: 'travel', eyebrow: 'JOURNEY', title: '旅行记录', description: '地点、见闻与途中影像。', href: '/travel.html', newHref: '/travel.html?new=1', publicHref: '/life.html?filter=travel', count: counts[3], recent: recent[3], tone: 'dashboard-sand' },
-    { key: 'note', eyebrow: 'DAILY LIFE', title: '生活随笔', description: '日常片段、想法和随手拍。', href: '/notes.html', newHref: '/notes.html?new=1', publicHref: '/life.html?filter=note', count: counts[4], recent: recent[4], tone: 'dashboard-blue' },
-  ], [counts, recent])
-  const total = counts.reduce((sum, value) => sum + value, 0)
+  const filtered = useMemo(() => items.filter((item) => {
+    const q = query.trim().toLowerCase()
+    return (!q || item.title.toLowerCase().includes(q)) &&
+      (type === 'all' || item.type === type) &&
+      (status === 'all' || (status === 'featured' ? Boolean(item.featured) : item.status === status))
+  }), [items, query, type, status])
+
+  const counts = useMemo(() => ({
+    total: items.length,
+    published: items.filter((item) => item.status === 'published').length,
+    draft: items.filter((item) => item.status === 'draft').length,
+    featured: items.filter((item) => item.featured).length,
+  }), [items])
+
+  async function patch(item: AdminContentItem, change: Partial<Pick<AdminContentItem, 'status' | 'featured' | 'pinned'>>) {
+    const key = `${item.type}-${item.id}`
+    setSaving(key)
+    try {
+      const next = await updateContentState(item.type, item.id, change)
+      setItems((current) => current.map((entry) => entry.type === item.type && entry.id === item.id ? { ...entry, ...next } : entry))
+    } catch (reason: any) { alert(reason.message || '保存失败') }
+    finally { setSaving('') }
+  }
 
   return (
     <App current="admin">
       <div className="admin-dashboard">
         <section className="dashboard-hero">
-          <div><p>/ CONTENT STUDIO</p><h1>管理中心<span>。</span></h1><p className="dashboard-lead">从一个地方维护工作学习与生活分享。先选择内容类型，再进入对应编辑器。</p></div>
-          <div className="dashboard-total"><strong>{loading ? '—' : total}</strong><span>全部内容</span></div>
+          <div><p>/ CONTENT STUDIO</p><h1>内容控制台<span>。</span></h1><p className="dashboard-lead">统一管理公开状态、主页精选与栏目置顶。草稿只在这里可见。</p></div>
+          <div className="dashboard-total"><strong>{loading ? '—' : counts.total}</strong><span>全部内容</span></div>
         </section>
-        {error && <p className="dashboard-error">{error}</p>}
-        <section className="dashboard-grid" aria-busy={loading}>
-          {sections.map((section) => (
-            <article key={section.key} className={`dashboard-card ${section.tone}`}>
-              <div className="dashboard-card-head"><p>{section.eyebrow}</p><strong>{loading ? '—' : String(section.count).padStart(2, '0')}</strong></div>
-              <h2>{section.title}</h2><p className="dashboard-card-copy">{section.description}</p>
-              <div className="dashboard-recent"><span>最近更新</span>{loading ? <p>正在读取…</p> : section.recent.length ? <ul>{section.recent.map((title) => <li key={title}>{title}</li>)}</ul> : <p>还没有内容</p>}</div>
-              <div className="dashboard-actions"><a href={section.href}>管理内容</a><a href={section.newHref} className="primary">新建</a><a href={section.publicHref} className="quiet">查看前台 ↗</a></div>
-            </article>
-          ))}
+
+        <section className="content-stats">
+          <button onClick={() => setStatus('all')} className={status === 'all' ? 'active' : ''}><strong>{counts.total}</strong><span>全部</span></button>
+          <button onClick={() => setStatus('published')} className={status === 'published' ? 'active' : ''}><strong>{counts.published}</strong><span>已发布</span></button>
+          <button onClick={() => setStatus('draft')} className={status === 'draft' ? 'active' : ''}><strong>{counts.draft}</strong><span>草稿</span></button>
+          <button onClick={() => setStatus('featured')} className={status === 'featured' ? 'active' : ''}><strong>{counts.featured}</strong><span>精选</span></button>
+        </section>
+
+        <section className="content-manager">
+          <div className="content-toolbar">
+            <label><span>搜索</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入标题…" /></label>
+            <label><span>栏目</span><select value={type} onChange={(event) => setType(event.target.value as typeof type)}><option value="all">全部栏目</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <a href="/work.html?new=1" className="content-new">＋ 新建内容</a>
+          </div>
+
+          <div className="content-table">
+            {loading ? <p className="content-empty">正在读取内容…</p> : filtered.length === 0 ? <p className="content-empty">没有符合条件的内容</p> : filtered.map((item) => {
+              const key = `${item.type}-${item.id}`; const busy = saving === key
+              return <article key={key} className={item.status === 'draft' ? 'is-draft' : ''}>
+                <div className="content-main"><span className={`content-kind kind-${item.type}`}>{labels[item.type]}</span><div><h2>{item.title}</h2><p>{item.date} · #{String(item.id).padStart(3, '0')}</p></div></div>
+                <div className="content-flags">
+                  <button disabled={busy} onClick={() => patch(item, { status: item.status === 'published' ? 'draft' : 'published' })} className={item.status === 'published' ? 'on' : ''}>{item.status === 'published' ? '已发布' : '草稿'}</button>
+                  <button disabled={busy || item.status === 'draft'} onClick={() => patch(item, { featured: item.featured ? 0 : 1 })} className={item.featured ? 'on featured' : ''}>精选</button>
+                  <button disabled={busy || item.status === 'draft'} onClick={() => patch(item, { pinned: item.pinned ? 0 : 1 })} className={item.pinned ? 'on' : ''}>置顶</button>
+                </div>
+                <div className="content-links"><a href={`${editPages[item.type]}?id=${item.id}`}>编辑</a>{item.status === 'published' && <a href={`${publicPages[item.type]}${item.id}`}>查看 ↗</a>}</div>
+              </article>
+            })}
+          </div>
         </section>
       </div>
     </App>
   )
 }
-

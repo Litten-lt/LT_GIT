@@ -133,6 +133,17 @@ db.exec(`
     value      TEXT NOT NULL,
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
+  CREATE TABLE IF NOT EXISTS content_meta (
+    content_type TEXT NOT NULL,
+    content_id   INTEGER NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'published' CHECK(status IN ('draft','published')),
+    featured     INTEGER NOT NULL DEFAULT 0,
+    pinned       INTEGER NOT NULL DEFAULT 0,
+    updated_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    PRIMARY KEY (content_type, content_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_content_meta_display
+    ON content_meta(status, featured DESC, pinned DESC, updated_at DESC);
 `)
 
 // 老 works 表迁移: 检测 problem 字段就拼 description 重建表, 保留 id
@@ -281,6 +292,26 @@ function requireSession(req, res, next) {
     return res.status(401).json({ error: 'token 无效或已过期' })
   }
 }
+const CONTENT_TYPES = new Set(['work', 'study', 'figure', 'travel', 'note'])
+
+function contentMeta(type, id) {
+  return db.prepare(`
+    SELECT status, featured, pinned, updated_at AS state_updated_at
+    FROM content_meta WHERE content_type = ? AND content_id = ?
+  `).get(type, id) || { status: 'published', featured: 0, pinned: 0, state_updated_at: 0 }
+}
+
+function decorateContent(rows, type, role) {
+  return rows
+    .map((row) => ({ ...row, ...contentMeta(type, row.id) }))
+    .filter((row) => role === 'admin' || row.status === 'published')
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || Number(b.created_at || 0) - Number(a.created_at || 0))
+}
+
+function contentExists(type, id) {
+  const table = { work: 'works', study: 'studies', figure: 'figures', travel: 'travels', note: 'notes' }[type]
+  return table ? Boolean(db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(id)) : false
+}
 
 // ---------- multer 配置 ----------
 const storage = multer.diskStorage({
@@ -374,6 +405,38 @@ app.post('/api/auth/guest', loginLimiter, (req, res) => {
 app.get('/api/auth/me', requireSession, (req, res) => {
   res.json({ username: req.user.sub, role: req.user.role })
 })
+// 统一内容管理列表 (admin)
+app.get('/api/admin/content', requireAuth, (req, res) => {
+  const specs = [
+    ['work', 'works', 'title'], ['study', 'studies', 'title'],
+    ['figure', 'figures', 'name'], ['travel', 'travels', 'title'], ['note', 'notes', 'title'],
+  ]
+  const items = specs.flatMap(([type, table, titleField]) => db.prepare(`
+    SELECT id, ${titleField} AS title, date, created_at FROM ${table}
+  `).all().map((row) => { const meta = contentMeta(type, row.id); return { type, ...row, ...meta, updated_at: meta.state_updated_at || row.created_at } }))
+  items.sort((a, b) => Number(b.pinned) - Number(a.pinned) || Number(b.updated_at || b.created_at || 0) - Number(a.updated_at || a.created_at || 0))
+  res.json({ items })
+})
+
+app.patch('/api/admin/content/:type/:id', requireAuth, (req, res) => {
+  const type = req.params.type
+  const id = Number(req.params.id)
+  if (!CONTENT_TYPES.has(type) || !Number.isInteger(id) || !contentExists(type, id)) {
+    return res.status(404).json({ error: '内容不存在' })
+  }
+  const current = contentMeta(type, id)
+  const status = req.body?.status === undefined ? current.status : req.body.status
+  const featured = req.body?.featured === undefined ? Number(current.featured) : Number(Boolean(req.body.featured))
+  const pinned = req.body?.pinned === undefined ? Number(current.pinned) : Number(Boolean(req.body.pinned))
+  if (!['draft', 'published'].includes(status)) return res.status(400).json({ error: '状态无效' })
+  db.prepare(`
+    INSERT INTO content_meta (content_type, content_id, status, featured, pinned, updated_at)
+    VALUES (?, ?, ?, ?, ?, strftime('%s','now'))
+    ON CONFLICT(content_type, content_id) DO UPDATE SET
+      status=excluded.status, featured=excluded.featured, pinned=excluded.pinned, updated_at=excluded.updated_at
+  `).run(type, id, status, featured, pinned)
+  res.json({ ok: true, status, featured, pinned })
+})
 
 // 列出所有手办 (公开)
 app.get('/api/figures', requireSession, (req, res) => {
@@ -391,7 +454,7 @@ app.get('/api/figures', requireSession, (req, res) => {
     date: r.date,
     images: JSON.parse(r.images).map((fn) => `${PUBLIC_BASE_URL}/data/figures/${fn}`),
   }))
-  res.json({ figures })
+  res.json({ figures: decorateContent(figures, 'figure', req.user.role) })
 })
 
 // 新建手办 (admin)
@@ -502,7 +565,7 @@ app.get('/api/travels', requireSession, (req, res) => {
     date: r.date,
     images: JSON.parse(r.images).map((fn) => `${PUBLIC_BASE_URL}/data/figures/${fn}`),
   }))
-  res.json({ travels })
+  res.json({ travels: decorateContent(travels, 'travel', req.user.role) })
 })
 
 // 新建 travel (admin)
@@ -606,7 +669,7 @@ app.get('/api/notes', requireSession, (req, res) => {
     date: r.date,
     images: JSON.parse(r.images).map((fn) => `${PUBLIC_BASE_URL}/data/figures/${fn}`),
   }))
-  res.json({ notes })
+  res.json({ notes: decorateContent(notes, 'note', req.user.role) })
 })
 
 // 新建 note (admin)
@@ -702,7 +765,7 @@ app.get('/api/works', requireSession, (req, res) => {
     FROM works w
     ORDER BY w.created_at DESC
   `).all()
-  res.json({ works: rows })
+  res.json({ works: decorateContent(rows, 'work', req.user.role) })
 })
 
 // 详情 (含全部 notes, 按时间正序)
@@ -711,7 +774,7 @@ app.get('/api/works/:id', requireSession, (req, res) => {
   const w = db.prepare(`
     SELECT id, title, description, date, created_at, updated_at FROM works WHERE id = ?
   `).get(id)
-  if (!w) return res.status(404).json({ error: '记录不存在' })
+  if (!w || (req.user.role !== 'admin' && contentMeta('work', id).status !== 'published')) return res.status(404).json({ error: '记录不存在' })
 
   const notes = db.prepare(`
     SELECT id, content, images, created_at FROM work_notes
@@ -920,7 +983,7 @@ app.get('/api/studies', requireSession, (req, res) => {
     FROM studies s
     ORDER BY s.created_at DESC
   `).all()
-  res.json({ studies: rows })
+  res.json({ studies: decorateContent(rows, 'study', req.user.role) })
 })
 
 // 详情 (含全部 notes, 按时间正序)
@@ -929,7 +992,7 @@ app.get('/api/studies/:id', requireSession, (req, res) => {
   const s = db.prepare(`
     SELECT id, title, description, date, created_at, updated_at FROM studies WHERE id = ?
   `).get(id)
-  if (!s) return res.status(404).json({ error: '记录不存在' })
+  if (!s || (req.user.role !== 'admin' && contentMeta('study', id).status !== 'published')) return res.status(404).json({ error: '记录不存在' })
 
   const notes = db.prepare(`
     SELECT id, content, images, created_at FROM study_notes

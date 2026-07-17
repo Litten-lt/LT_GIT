@@ -47,16 +47,18 @@ function cleanDescription(value?: string) {
 }
 
 function cardsFromContent(works: Work[], studies: Study[]): ProjectCard[] {
-  const recentWorks = works.slice(0, 2).map((work, index): ProjectCard => ({
+  const orderedWorks = [...works].sort((a, b) => Number(b.featured) - Number(a.featured) || Number(b.pinned) - Number(a.pinned) || b.created_at - a.created_at)
+  const orderedStudies = [...studies].sort((a, b) => Number(b.featured) - Number(a.featured) || Number(b.pinned) - Number(a.pinned) || b.created_at - a.created_at)
+  const recentWorks = orderedWorks.slice(0, 2).map((work, index): ProjectCard => ({
     index: String(index + 1).padStart(2, '0'),
     type: 'FIELD NOTE / WORK',
     title: work.title,
     description: cleanDescription(work.description),
     meta: work.note_count + ' 条过程记录 · ' + work.date,
-    href: '/work.html?id=' + work.id,
+    href: '/journal.html?type=work&id=' + work.id,
     tone: index === 0 ? 'project-warm' : 'project-olive',
   }))
-  const latestStudy = studies[0]
+  const latestStudy = orderedStudies[0]
   if (latestStudy) {
     recentWorks.push({
       index: String(recentWorks.length + 1).padStart(2, '0'),
@@ -64,7 +66,7 @@ function cardsFromContent(works: Work[], studies: Study[]): ProjectCard[] {
       title: latestStudy.title,
       description: cleanDescription(latestStudy.description),
       meta: latestStudy.note_count + ' 条学习记录 · ' + latestStudy.date,
-      href: '/study.html?id=' + latestStudy.id,
+      href: '/journal.html?type=study&id=' + latestStudy.id,
       tone: 'project-plum',
     })
   }
@@ -126,5 +128,4 @@ export default function FeaturedProjects() {
     </section>
   )
 }
-
 
