@@ -9,6 +9,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
+        admin: resolve(__dirname, 'admin.html'),
         journal: resolve(__dirname, 'journal.html'),
         travel: resolve(__dirname, 'travel.html'),
         blog: resolve(__dirname, 'blog.html'),
@@ -22,3 +23,4 @@ export default defineConfig({
     },
   },
 })
+

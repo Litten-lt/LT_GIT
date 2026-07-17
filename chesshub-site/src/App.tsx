@@ -5,7 +5,7 @@ import BackgroundPicker from './components/BackgroundPicker'
 import UsagePanel from './components/UsagePanel'
 
 type Props = {
-  current?: 'home' | 'travel' | 'blog' | 'figures' | 'life' | 'work' | 'study'
+  current?: 'home' | 'admin' | 'travel' | 'blog' | 'figures' | 'life' | 'work' | 'study'
   children?: React.ReactNode
 }
 
@@ -81,15 +81,20 @@ export default function App({ current = 'home', children }: Props) {
             {showAdminSession && <span className="text-ink-soft hidden sm:inline">{username}</span>}
             <span className="font-mono text-ink-soft/60 hidden md:inline">{time}</span>
             {showAdminSession ? (
-              <button
-                onClick={() => {
-                  if (confirm('确认登出?')) {
-                    clearAuth()
-                    window.location.href = '/'
-                  }
-                }}
-                className="text-ink-soft hover:text-accent transition focus-ring rounded"
-              >登出</button>
+              <>
+                {current !== 'admin' && (
+                  <a href="/admin.html" className="text-ink-soft hover:text-accent transition focus-ring rounded">管理中心</a>
+                )}
+                <button
+                  onClick={() => {
+                    if (confirm('确认登出?')) {
+                      clearAuth()
+                      window.location.href = '/'
+                    }
+                  }}
+                  className="text-ink-soft hover:text-accent transition focus-ring rounded"
+                >登出</button>
+              </>
             ) : (
               <a href="/login.html" className="text-ink-soft hover:text-accent transition focus-ring rounded">管理入口</a>
             )}
@@ -123,5 +128,4 @@ export default function App({ current = 'home', children }: Props) {
     </div>
   )
 }
-
 

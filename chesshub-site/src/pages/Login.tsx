@@ -4,7 +4,7 @@ import { login as apiLogin } from '../api'
 
 export default function Login() {
   if (isAdmin()) {
-    window.location.replace('/')
+    window.location.replace('/admin.html')
     return null
   }
 
@@ -20,7 +20,7 @@ export default function Login() {
     try {
       const result = await apiLogin(username, password)
       setAuth(result.token, result.role, result.username)
-      window.location.href = '/'
+      window.location.href = '/admin.html'
     } catch (reason: any) {
       setError(reason.message || '登录失败')
     } finally {
@@ -100,3 +100,4 @@ export default function Login() {
     </main>
   )
 }
+

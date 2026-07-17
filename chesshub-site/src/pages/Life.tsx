@@ -43,6 +43,7 @@ export default function Life() {
     setAdmin(isAdmin())
     setGuest(isGuest())
     loadNotes()
+    if (new URLSearchParams(window.location.search).get('new') === '1' && isAdmin()) openCreate()
   }, [])
 
   async function loadNotes() {

@@ -43,6 +43,7 @@ export default function TravelPage() {
     setAdmin(isAdmin())
     setGuest(isGuest())
     loadTravels()
+    if (new URLSearchParams(window.location.search).get('new') === '1' && isAdmin()) openCreate()
   }, [])
 
   async function loadTravels() {
