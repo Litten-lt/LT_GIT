@@ -10,6 +10,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         admin: resolve(__dirname, 'admin.html'),
+        compose: resolve(__dirname, 'compose.html'),
         journal: resolve(__dirname, 'journal.html'),
         travel: resolve(__dirname, 'travel.html'),
         blog: resolve(__dirname, 'blog.html'),

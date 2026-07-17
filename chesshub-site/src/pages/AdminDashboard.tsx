@@ -70,7 +70,7 @@ export default function AdminDashboard() {
           <div className="content-toolbar">
             <label><span>搜索</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入标题…" /></label>
             <label><span>栏目</span><select value={type} onChange={(event) => setType(event.target.value as typeof type)}><option value="all">全部栏目</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <a href="/work.html?new=1" className="content-new">＋ 新建内容</a>
+            <a href="/compose.html" className="content-new">＋ 新建内容</a>
           </div>
 
           <div className="content-table">
@@ -92,3 +92,4 @@ export default function AdminDashboard() {
     </App>
   )
 }
+
