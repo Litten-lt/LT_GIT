@@ -4,7 +4,6 @@ import { listAdminContent, updateContentState, type AdminContentItem, type Conte
 import { ensureLoggedIn, isAdmin } from '../auth'
 
 const labels: Record<ContentType, string> = { work: '工作', study: '学习', figure: '模型', travel: '旅行', note: '随笔' }
-const editPages: Record<ContentType, string> = { work: '/work.html', study: '/study.html', figure: '/figures.html', travel: '/travel.html', note: '/notes.html' }
 const publicPages: Record<ContentType, string> = { work: '/journal.html?type=work&id=', study: '/journal.html?type=study&id=', figure: '/life.html?type=figure&id=', travel: '/life.html?type=travel&id=', note: '/life.html?type=note&id=' }
 
 export default function AdminDashboard() {
@@ -83,7 +82,7 @@ export default function AdminDashboard() {
                   <button disabled={busy || item.status === 'draft'} onClick={() => patch(item, { featured: item.featured ? 0 : 1 })} className={item.featured ? 'on featured' : ''}>精选</button>
                   <button disabled={busy || item.status === 'draft'} onClick={() => patch(item, { pinned: item.pinned ? 0 : 1 })} className={item.pinned ? 'on' : ''}>置顶</button>
                 </div>
-                <div className="content-links"><a href={`${editPages[item.type]}?id=${item.id}`}>编辑</a>{item.status === 'published' && <a href={`${publicPages[item.type]}${item.id}`}>查看 ↗</a>}</div>
+                <div className="content-links"><a href={`/compose.html?type=${item.type}&id=${item.id}`}>编辑</a>{item.status === 'published' && <a href={`${publicPages[item.type]}${item.id}`}>查看 ↗</a>}</div>
               </article>
             })}
           </div>
