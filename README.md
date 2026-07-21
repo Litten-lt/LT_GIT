@@ -8,6 +8,7 @@
 apps/
   web/             React + Vite 前端
   api/             Express + SQLite 后端
+    src/            应用装配、配置、中间件与服务
 docs/
   archive/         历史部署记录
 scripts/
@@ -37,8 +38,9 @@ npm run dev
 ## 验证
 
 ```bash
-cd apps/web && npm run build
-cd apps/api && node --test tests/*.test.mjs
+npm run verify
 ```
+
+也可以在仓库根目录分别运行 `npm run dev:web`、`npm run dev:api`、`npm run build` 和 `npm run test`。
 
 生产部署说明见 [docs/deployment.md](docs/deployment.md)。

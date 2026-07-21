@@ -24,12 +24,8 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            apps/web/package-lock.json
-            apps/api/package-lock.json
-      - name: Build web
-        working-directory: apps/web
-        run: npm ci && npm run build
-      - name: Test API
-        working-directory: apps/api
-        run: npm ci && node --test tests/*.test.mjs
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify web and API
+        run: npm run verify

@@ -2,6 +2,12 @@
 
 仓库保留两份正式部署工具，密码只通过环境变量 `SSH_PASS` 传入，不写入代码。
 
+部署前先在仓库根目录运行：
+
+```powershell
+npm run verify
+```
+
 ## 前端
 
 ```powershell

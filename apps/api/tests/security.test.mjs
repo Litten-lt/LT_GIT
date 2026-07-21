@@ -475,8 +475,8 @@ describe('⑤ 全局错误处理 + 日志', () => {
     assert.equal(r.body.error, 'API 不存在')
   })
 
-  test('E.2 静态分析: server.js 源码中没有任何 5xx 路由直接回 e.message', async () => {
-    const src = await readFile(path.join(ROOT, 'server.js'), 'utf8')
+  test('E.2 静态分析: app.js 源码中没有任何 5xx 路由直接回 e.message', async () => {
+    const src = await readFile(path.join(ROOT, 'src', 'app.js'), 'utf8')
     // 找所有 res.status(500).json(...) 形态
     const matches = src.match(/res\.status\(5\w+\)\.json\(\s*\{\s*error:\s*e\.message/g) || []
     assert.equal(matches.length, 0,
@@ -484,7 +484,7 @@ describe('⑤ 全局错误处理 + 日志', () => {
   })
 
   test('E.3 静态分析: 全部 5xx 都配合 req.log.error({err: e})', async () => {
-    const src = await readFile(path.join(ROOT, 'server.js'), 'utf8')
+    const src = await readFile(path.join(ROOT, 'src', 'app.js'), 'utf8')
     // 找所有 res.status(5xx) 附近 5 行内是否有 logger
     const lines = src.split('\n')
     const violations = []

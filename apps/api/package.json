@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check server.js && node --check src/app.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
