@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { listStudies, listWorks, type Study, type Work } from '../api'
+import { listContents, type UnifiedContent } from '../api'
 
 type ProjectCard = {
   index: string
@@ -46,31 +46,18 @@ function cleanDescription(value?: string) {
   return value.replace(/[#*_>\[\]]/g, '').replace(/\s+/g, ' ').trim().slice(0, 90)
 }
 
-function cardsFromContent(works: Work[], studies: Study[]): ProjectCard[] {
-  const orderedWorks = [...works].sort((a, b) => Number(b.featured) - Number(a.featured) || Number(b.pinned) - Number(a.pinned) || b.created_at - a.created_at)
-  const orderedStudies = [...studies].sort((a, b) => Number(b.featured) - Number(a.featured) || Number(b.pinned) - Number(a.pinned) || b.created_at - a.created_at)
-  const recentWorks = orderedWorks.slice(0, 2).map((work, index): ProjectCard => ({
+function cardsFromContent(contents: UnifiedContent[]): ProjectCard[] {
+  const ordered = [...contents].sort((a, b) => Number(b.featured) - Number(a.featured) || Number(b.pinned) - Number(a.pinned) || b.updated_at - a.updated_at)
+  const cards = ordered.slice(0, 3).map((item, index): ProjectCard => ({
     index: String(index + 1).padStart(2, '0'),
-    type: 'FIELD NOTE / WORK',
-    title: work.title,
-    description: cleanDescription(work.description),
-    meta: work.note_count + ' 条过程记录 · ' + work.date,
-    href: '/journal.html?type=work&id=' + work.id,
-    tone: index === 0 ? 'project-warm' : 'project-olive',
+    type: item.category_name || 'FIELD NOTE',
+    title: item.title,
+    description: cleanDescription(item.body),
+    meta: item.note_count + ' 条过程记录 · ' + item.date,
+    href: '/journal.html?id=' + item.id,
+    tone: index === 0 ? 'project-warm' : index === 1 ? 'project-olive' : 'project-plum',
   }))
-  const latestStudy = orderedStudies[0]
-  if (latestStudy) {
-    recentWorks.push({
-      index: String(recentWorks.length + 1).padStart(2, '0'),
-      type: 'LEARNING NOTE',
-      title: latestStudy.title,
-      description: cleanDescription(latestStudy.description),
-      meta: latestStudy.note_count + ' 条学习记录 · ' + latestStudy.date,
-      href: '/journal.html?type=study&id=' + latestStudy.id,
-      tone: 'project-plum',
-    })
-  }
-  return recentWorks.length >= 2 ? recentWorks : fallbackCards
+  return cards.length >= 2 ? cards : fallbackCards
 }
 
 export default function FeaturedProjects() {
@@ -79,10 +66,10 @@ export default function FeaturedProjects() {
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([listWorks(), listStudies()])
-      .then(([workData, studyData]) => {
+    listContents('journal')
+      .then((data) => {
         if (cancelled) return
-        const next = cardsFromContent(workData.works, studyData.studies)
+        const next = cardsFromContent(data.contents)
         setCards(next)
         setUsingLiveContent(next !== fallbackCards)
       })

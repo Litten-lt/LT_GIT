@@ -90,6 +90,44 @@ export function listTaxonomy() {
   return request<{ channels: Channel[] }>('/taxonomy')
 }
 
+export type UnifiedNote = { id: number; body: string; images: string[]; created_at: number; updated_at: number }
+export type UnifiedContent = {
+  id: number
+  channel_id: 'journal' | 'life'
+  channel_name: string
+  category_id: number | null
+  category_slug?: string | null
+  category_name?: string | null
+  format: 'article' | 'gallery'
+  title: string
+  subtitle?: string | null
+  body: string
+  images: string[]
+  date: string
+  status: 'draft' | 'published'
+  featured: number
+  pinned: number
+  note_count: number
+  created_at: number
+  updated_at: number
+  legacy_type?: ContentType | null
+  legacy_id?: number | null
+  notes?: UnifiedNote[]
+}
+
+export function listContents(channel?: 'journal' | 'life') {
+  return request<{ contents: UnifiedContent[] }>(`/contents${channel ? `?channel=${channel}` : ''}`)
+}
+export function getContent(id: number) { return request<{ content: UnifiedContent }>(`/contents/${id}`) }
+export function createContent(payload: Partial<UnifiedContent> & Pick<UnifiedContent, 'channel_id' | 'format' | 'title' | 'body' | 'images'>) {
+  return request<{ id: number }>('/contents', { method: 'POST', body: JSON.stringify(payload) })
+}
+export function updateContent(id: number, payload: Partial<UnifiedContent>) { return request<{ ok: true }>(`/contents/${id}`, { method: 'PUT', body: JSON.stringify(payload) }) }
+export function deleteContent(id: number) { return request<{ ok: true }>(`/contents/${id}`, { method: 'DELETE' }) }
+export function addContentNote(contentId: number, body: string, files: File[] = []) { const fd = new FormData(); fd.append('body', body); files.forEach((file) => fd.append('images', file)); return request<{ id: number }>(`/contents/${contentId}/notes`, { method: 'POST', body: fd }) }
+export function updateContentNote(contentId: number, noteId: number, body: string) { return request<{ ok: true }>(`/contents/${contentId}/notes/${noteId}`, { method: 'PUT', body: JSON.stringify({ body }) }) }
+export function deleteContentNote(contentId: number, noteId: number) { return request<{ ok: true }>(`/contents/${contentId}/notes/${noteId}`, { method: 'DELETE' }) }
+
 export function createCategory(payload: { channel_id: string; name: string; description?: string }) {
   return request<{ category: Category }>('/admin/categories', { method: 'POST', body: JSON.stringify(payload) })
 }

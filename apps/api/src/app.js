@@ -177,6 +177,41 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_content_taxonomy_category
     ON content_taxonomy(channel_id, category_id, content_type, content_id);
+
+  CREATE TABLE IF NOT EXISTS contents (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id  TEXT NOT NULL REFERENCES channels(id) ON DELETE RESTRICT,
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    format      TEXT NOT NULL CHECK(format IN ('article','gallery')),
+    title       TEXT NOT NULL,
+    subtitle    TEXT,
+    body        TEXT NOT NULL DEFAULT '',
+    images      TEXT NOT NULL DEFAULT '[]',
+    date        TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'published' CHECK(status IN ('draft','published')),
+    featured    INTEGER NOT NULL DEFAULT 0,
+    pinned      INTEGER NOT NULL DEFAULT 0,
+    legacy_type TEXT,
+    legacy_id   INTEGER,
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    UNIQUE(legacy_type, legacy_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_contents_display ON contents(channel_id, status, featured DESC, pinned DESC, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_contents_category ON contents(channel_id, category_id, updated_at DESC);
+
+  CREATE TABLE IF NOT EXISTS content_notes_v2 (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_id  INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+    body        TEXT NOT NULL DEFAULT '',
+    images      TEXT NOT NULL DEFAULT '[]',
+    legacy_type TEXT,
+    legacy_id   INTEGER,
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    UNIQUE(legacy_type, legacy_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_content_notes_v2_parent ON content_notes_v2(content_id, created_at, id);
 `)
 
 // 老 works 表迁移: 检测 problem 字段就拼 description 重建表, 保留 id
@@ -304,6 +339,38 @@ db.exec(`
   CREATE TRIGGER IF NOT EXISTS taxonomy_note_delete AFTER DELETE ON notes BEGIN
     DELETE FROM content_taxonomy WHERE content_type = 'note' AND content_id = OLD.id;
   END;
+`)
+
+// ---------- 统一内容模型 v2 ----------
+// 旧五类表只作为兼容来源；所有现有内容幂等迁移到统一表。
+db.exec(`
+  INSERT OR IGNORE INTO contents (channel_id, category_id, format, title, body, images, date, status, featured, pinned, legacy_type, legacy_id, created_at, updated_at)
+    SELECT 'journal', t.category_id, 'article', w.title, COALESCE(w.description,''), '[]', w.date,
+      COALESCE(m.status,'published'), COALESCE(m.featured,0), COALESCE(m.pinned,0), 'work', w.id, w.created_at, COALESCE(m.updated_at,w.created_at)
+    FROM works w LEFT JOIN content_taxonomy t ON t.content_type='work' AND t.content_id=w.id LEFT JOIN content_meta m ON m.content_type='work' AND m.content_id=w.id;
+  INSERT OR IGNORE INTO contents (channel_id, category_id, format, title, body, images, date, status, featured, pinned, legacy_type, legacy_id, created_at, updated_at)
+    SELECT 'journal', t.category_id, 'article', s.title, COALESCE(s.description,''), '[]', s.date,
+      COALESCE(m.status,'published'), COALESCE(m.featured,0), COALESCE(m.pinned,0), 'study', s.id, s.created_at, COALESCE(m.updated_at,s.created_at)
+    FROM studies s LEFT JOIN content_taxonomy t ON t.content_type='study' AND t.content_id=s.id LEFT JOIN content_meta m ON m.content_type='study' AND m.content_id=s.id;
+  INSERT OR IGNORE INTO contents (channel_id, category_id, format, title, subtitle, body, images, date, status, featured, pinned, legacy_type, legacy_id, created_at, updated_at)
+    SELECT 'life', t.category_id, 'gallery', f.name, f.brand, f.description, f.images, f.date,
+      COALESCE(m.status,'published'), COALESCE(m.featured,0), COALESCE(m.pinned,0), 'figure', f.id, f.created_at, COALESCE(m.updated_at,f.created_at)
+    FROM figures f LEFT JOIN content_taxonomy t ON t.content_type='figure' AND t.content_id=f.id LEFT JOIN content_meta m ON m.content_type='figure' AND m.content_id=f.id;
+  INSERT OR IGNORE INTO contents (channel_id, category_id, format, title, subtitle, body, images, date, status, featured, pinned, legacy_type, legacy_id, created_at, updated_at)
+    SELECT 'life', t.category_id, 'gallery', tr.title, tr.location, tr.description, tr.images, tr.date,
+      COALESCE(m.status,'published'), COALESCE(m.featured,0), COALESCE(m.pinned,0), 'travel', tr.id, tr.created_at, COALESCE(m.updated_at,tr.created_at)
+    FROM travels tr LEFT JOIN content_taxonomy t ON t.content_type='travel' AND t.content_id=tr.id LEFT JOIN content_meta m ON m.content_type='travel' AND m.content_id=tr.id;
+  INSERT OR IGNORE INTO contents (channel_id, category_id, format, title, subtitle, body, images, date, status, featured, pinned, legacy_type, legacy_id, created_at, updated_at)
+    SELECT 'life', t.category_id, 'gallery', n.title, n.scene, n.description, n.images, n.date,
+      COALESCE(m.status,'published'), COALESCE(m.featured,0), COALESCE(m.pinned,0), 'note', n.id, n.created_at, COALESCE(m.updated_at,n.created_at)
+    FROM notes n LEFT JOIN content_taxonomy t ON t.content_type='note' AND t.content_id=n.id LEFT JOIN content_meta m ON m.content_type='note' AND m.content_id=n.id;
+
+  INSERT OR IGNORE INTO content_notes_v2 (content_id, body, images, legacy_type, legacy_id, created_at, updated_at)
+    SELECT c.id, COALESCE(n.content,''), COALESCE(n.images,'[]'), 'work', n.id, n.created_at, n.created_at
+    FROM work_notes n JOIN contents c ON c.legacy_type='work' AND c.legacy_id=n.work_id;
+  INSERT OR IGNORE INTO content_notes_v2 (content_id, body, images, legacy_type, legacy_id, created_at, updated_at)
+    SELECT c.id, COALESCE(n.content,''), '[]', 'study', n.id, n.created_at, n.created_at
+    FROM study_notes n JOIN contents c ON c.legacy_type='study' AND c.legacy_id=n.study_id;
 `)
 
 const app = express()
@@ -462,6 +529,106 @@ app.get('/api/auth/me', requireSession, (req, res) => {
   res.json({ username: req.user.sub, role: req.user.role })
 })
 
+const contentRow = (row) => row ? {
+  ...row,
+  images: JSON.parse(row.images || '[]').map((name) => `${PUBLIC_BASE_URL}/data/figures/${name}`),
+  category_name: row.category_name || null,
+  note_count: Number(row.note_count || 0),
+} : null
+const contentSelect = `
+  SELECT c.*, ch.name AS channel_name, cat.slug AS category_slug, cat.name AS category_name,
+    (SELECT COUNT(*) FROM content_notes_v2 n WHERE n.content_id = c.id) AS note_count
+  FROM contents c JOIN channels ch ON ch.id = c.channel_id LEFT JOIN categories cat ON cat.id = c.category_id
+`
+
+app.get('/api/contents', requireSession, (req, res) => {
+  const params = []
+  const where = []
+  if (req.query.channel) { where.push('c.channel_id = ?'); params.push(String(req.query.channel)) }
+  if (req.user.role !== 'admin') where.push("c.status = 'published'")
+  const rows = db.prepare(`${contentSelect} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY c.pinned DESC, c.updated_at DESC, c.id DESC`).all(...params)
+  res.json({ contents: rows.map(contentRow) })
+})
+
+app.get('/api/contents/:id', requireSession, (req, res) => {
+  const id = Number(req.params.id)
+  const row = db.prepare(`${contentSelect} WHERE c.id = ?`).get(id)
+  if (!row || (req.user.role !== 'admin' && row.status !== 'published')) return res.status(404).json({ error: '内容不存在' })
+  const notes = db.prepare('SELECT id, body, images, created_at, updated_at FROM content_notes_v2 WHERE content_id = ? ORDER BY created_at, id').all(id).map((note) => ({ ...note, images: JSON.parse(note.images || '[]').map((name) => `${PUBLIC_BASE_URL}/data/figures/${name}`) }))
+  res.json({ content: { ...contentRow(row), notes } })
+})
+
+app.post('/api/contents', requireAuth, (req, res) => {
+  const { channel_id: channelId, category_id: rawCategory, format, title, subtitle, body, images = [], status = 'draft', featured = 0, pinned = 0 } = req.body || {}
+  const categoryId = rawCategory === null || rawCategory === '' || rawCategory === undefined ? null : Number(rawCategory)
+  if (!['journal','life'].includes(channelId) || !['article','gallery'].includes(format) || !String(title || '').trim() || !String(body || '').trim() || !Array.isArray(images)) return res.status(400).json({ error: '内容参数无效' })
+  if (!['draft','published'].includes(status)) return res.status(400).json({ error: '发布状态无效' })
+  if (categoryId !== null && !db.prepare('SELECT id FROM categories WHERE id = ? AND channel_id = ?').get(categoryId, channelId)) return res.status(400).json({ error: '分类不属于当前频道' })
+  const nowDate = new Date().toISOString().slice(0, 7).replace('-', '.')
+  const result = db.prepare(`INSERT INTO contents (channel_id, category_id, format, title, subtitle, body, images, date, status, featured, pinned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(channelId, categoryId, format, String(title).trim(), String(subtitle || '').trim() || null, String(body).trim(), JSON.stringify(images), nowDate, status, Number(Boolean(featured && status === 'published')), Number(Boolean(pinned && status === 'published')))
+  res.status(201).json({ id: Number(result.lastInsertRowid) })
+})
+
+app.put('/api/contents/:id', requireAuth, (req, res) => {
+  const id = Number(req.params.id)
+  const current = db.prepare('SELECT * FROM contents WHERE id = ?').get(id)
+  if (!current) return res.status(404).json({ error: '内容不存在' })
+  const channelId = req.body?.channel_id ?? current.channel_id
+  const categoryId = Object.prototype.hasOwnProperty.call(req.body || {}, 'category_id') ? (req.body.category_id === null || req.body.category_id === '' ? null : Number(req.body.category_id)) : current.category_id
+  const format = req.body?.format ?? current.format
+  const title = req.body?.title === undefined ? current.title : String(req.body.title).trim()
+  const body = req.body?.body === undefined ? current.body : String(req.body.body).trim()
+  const images = req.body?.images === undefined ? JSON.parse(current.images) : req.body.images
+  const status = req.body?.status ?? current.status
+  if (!['journal','life'].includes(channelId) || !['article','gallery'].includes(format) || !title || !body || !Array.isArray(images) || !['draft','published'].includes(status)) return res.status(400).json({ error: '内容参数无效' })
+  if (categoryId !== null && !db.prepare('SELECT id FROM categories WHERE id = ? AND channel_id = ?').get(categoryId, channelId)) return res.status(400).json({ error: '分类不属于当前频道' })
+  db.prepare(`UPDATE contents SET channel_id=?, category_id=?, format=?, title=?, subtitle=?, body=?, images=?, status=?, featured=?, pinned=?, updated_at=strftime('%s','now') WHERE id=?`).run(channelId, categoryId, format, title, req.body?.subtitle === undefined ? current.subtitle : String(req.body.subtitle || '').trim() || null, body, JSON.stringify(images), status, Number(Boolean(req.body?.featured ?? current.featured) && status === 'published'), Number(Boolean(req.body?.pinned ?? current.pinned) && status === 'published'), id)
+  res.json({ ok: true })
+})
+
+app.delete('/api/contents/:id', requireAuth, (req, res) => {
+  const id = Number(req.params.id)
+  const current = db.prepare('SELECT images FROM contents WHERE id = ?').get(id)
+  if (!current) return res.status(404).json({ error: '内容不存在' })
+  db.prepare('DELETE FROM contents WHERE id = ?').run(id)
+  res.json({ ok: true })
+})
+
+app.post('/api/contents/:id/notes', requireAuth, uploadLimiter, (req, res) => {
+  upload.array('images', 5)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || '上传失败' })
+    ;(async () => {
+      const files = req.files || []
+      try {
+        if (!db.prepare('SELECT id FROM contents WHERE id = ?').get(Number(req.params.id))) return res.status(404).json({ error: '内容不存在' })
+        for (const file of files) if (!await validateImageMagic(file.path)) { await Promise.all(files.map((item) => unlink(item.path).catch(() => {}))); return res.status(400).json({ error: '文件内容与图片格式不符' }) }
+        const body = String(req.body?.body || '').trim()
+        if (!body && !files.length) return res.status(400).json({ error: '内容或图片至少有一个' })
+        const result = db.prepare('INSERT INTO content_notes_v2 (content_id, body, images) VALUES (?, ?, ?)').run(Number(req.params.id), body, JSON.stringify(files.map((file) => file.filename)))
+        res.status(201).json({ id: Number(result.lastInsertRowid) })
+      } catch (e) {
+        req.log?.error({ err: e }, 'create unified note failed')
+        res.status(500).json({ error: '保存说明失败' })
+      }
+    })()
+  })
+})
+
+app.put('/api/contents/:id/notes/:noteId', requireAuth, (req, res) => {
+  const note = db.prepare('SELECT id FROM content_notes_v2 WHERE id = ? AND content_id = ?').get(Number(req.params.noteId), Number(req.params.id))
+  if (!note) return res.status(404).json({ error: '说明不存在' })
+  const body = String(req.body?.body || '').trim()
+  if (!body) return res.status(400).json({ error: '说明内容不能为空' })
+  db.prepare("UPDATE content_notes_v2 SET body=?, updated_at=strftime('%s','now') WHERE id=?").run(body, note.id)
+  res.json({ ok: true })
+})
+
+app.delete('/api/contents/:id/notes/:noteId', requireAuth, (req, res) => {
+  const result = db.prepare('DELETE FROM content_notes_v2 WHERE id = ? AND content_id = ?').run(Number(req.params.noteId), Number(req.params.id))
+  if (!result.changes) return res.status(404).json({ error: '说明不存在' })
+  res.json({ ok: true })
+})
+
 // 当前可用频道与分类。第一阶段只读，后续管理中心在此基础上增加增删改。
 app.get('/api/taxonomy', requireSession, (req, res) => {
   const channels = db.prepare(`
@@ -518,7 +685,9 @@ app.delete('/api/admin/categories/:id', requireAuth, (req, res) => {
   const id = Number(req.params.id)
   const current = db.prepare('SELECT id, name FROM categories WHERE id = ?').get(id)
   if (!current) return res.status(404).json({ error: '分类不存在' })
-  const affected = db.prepare('SELECT COUNT(*) AS count FROM content_taxonomy WHERE category_id = ?').get(id).count
+  const unifiedCount = db.prepare('SELECT COUNT(*) AS count FROM contents WHERE category_id = ?').get(id).count
+  const legacyCount = db.prepare('SELECT COUNT(*) AS count FROM content_taxonomy WHERE category_id = ?').get(id).count
+  const affected = Math.max(unifiedCount, legacyCount)
   db.prepare('DELETE FROM categories WHERE id = ?').run(id)
   res.json({ ok: true, affected })
 })

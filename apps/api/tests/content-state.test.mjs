@@ -45,6 +45,18 @@ test('draft is hidden from guests while admin can manage it', async () => {
   assert.equal(taxonomy.status, 200)
   assert.deepEqual(taxonomy.body.channels.map((channel) => channel.id), ['journal', 'life'])
   assert.equal(taxonomy.body.channels.flatMap((channel) => channel.categories).length, 5)
+  const studyCategoryId = taxonomy.body.channels.flatMap((channel) => channel.categories).find((entry) => entry.slug === 'study').id
+  const unified = await request('/api/contents', { method: 'POST', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ channel_id: 'journal', category_id: studyCategoryId, format: 'article', title: '统一模型测试', body: '统一正文', images: [], status: 'draft' }) })
+  assert.equal(unified.status, 201)
+  const guestUnifiedDrafts = await request('/api/contents?channel=journal', { headers: { authorization: `Bearer ${guest}` } })
+  assert.equal(guestUnifiedDrafts.body.contents.some((entry) => entry.id === unified.body.id), false)
+  await request(`/api/contents/${unified.body.id}`, { method: 'PUT', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'published', featured: true }) })
+  const noteForm = new FormData(); noteForm.append('body', '统一过程说明')
+  const unifiedNote = await request(`/api/contents/${unified.body.id}/notes`, { method: 'POST', headers: { authorization: `Bearer ${admin}` }, body: noteForm })
+  assert.equal(unifiedNote.status, 201)
+  const unifiedDetail = await request(`/api/contents/${unified.body.id}`, { headers: { authorization: `Bearer ${guest}` } })
+  assert.equal(unifiedDetail.body.content.category_name, '学习笔记')
+  assert.equal(unifiedDetail.body.content.notes[0].body, '统一过程说明')
 
   const custom = await request('/api/admin/categories', { method: 'POST', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ channel_id: 'journal', name: '工程实践' }) })
   assert.equal(custom.status, 201)

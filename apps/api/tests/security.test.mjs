@@ -609,6 +609,7 @@ describe('G. GET 鉴权 - 防 curl 直打后端', () => {
     '/api/notes',
     '/api/works',
     '/api/taxonomy',
+    '/api/contents',
   ]
   const publicGets = [
     '/api/settings/hero-bg',
@@ -950,6 +951,15 @@ describe('I. 老 schema → 新 schema 数据迁移', () => {
     assert.ok(!('solution' in w))
     assert.ok(!('tags' in w))
     assert.ok(!('images' in w))
+  })
+
+  test('I.3b 老 work 同步迁移到统一内容模型并保留来源 id', async () => {
+    const r = await req(PORT, '/api/contents?channel=journal', { headers: { authorization: `Bearer ${adminToken}` } })
+    assert.equal(r.status, 200)
+    const content = r.body.contents.find((item) => item.legacy_type === 'work' && item.legacy_id === oldId)
+    assert.ok(content)
+    assert.equal(content.title, '老 ticket 标题')
+    assert.ok(content.body.includes('[现象]'))
   })
 
   test('I.4 迁移后可以追加新 note (老 work 也能用新功能)', async () => {
