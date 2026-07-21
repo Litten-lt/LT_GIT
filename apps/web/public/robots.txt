@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin.html
+Disallow: /compose.html
+Disallow: /login.html
+Sitemap: http://159.75.97.172/sitemap.xml

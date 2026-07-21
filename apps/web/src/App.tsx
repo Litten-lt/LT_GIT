@@ -55,6 +55,7 @@ export default function App({ current = 'home', children }: Props) {
             LongTeng<span className="text-accent">.</span>
           </a>
           <div className="flex items-center gap-3 text-xs">
+            <a href="/search.html" className="text-ink-soft hover:text-accent transition focus-ring rounded">搜索</a>
             {isAdmin && (
               <span className="px-2 py-0.5 rounded-full font-mono bg-emerald-100 text-emerald-700">✓ Admin</span>
             )}

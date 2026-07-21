@@ -20,6 +20,7 @@ export default defineConfig({
         notes: resolve(__dirname, 'notes.html'),
         work: resolve(__dirname, 'work.html'),
         study: resolve(__dirname, 'study.html'),
+        search: resolve(__dirname, 'search.html'),
       },
     },
   },
