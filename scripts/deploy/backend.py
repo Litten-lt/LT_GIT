@@ -4,7 +4,7 @@ import os, time, tarfile, tempfile, paramiko
 from pathlib import Path
 
 HOST, USER = "159.75.97.172", "ubuntu"
-PASSWORD = os.environ["SSH_PASS"]
+PASSWORD = os.environ.get("SSH_PASS")
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL = ROOT / "apps" / "api"
 REMOTE_TMP = "/tmp/chesshub-api.tar.gz"
@@ -12,7 +12,7 @@ REMOTE_APP = "/opt/chesshub-server"
 
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-client.connect(HOST, 22, USER, PASSWORD, timeout=20, look_for_keys=False, allow_agent=False)
+client.connect(HOST, 22, USER, PASSWORD, timeout=20, look_for_keys=not PASSWORD, allow_agent=not PASSWORD)
 
 def run(command, timeout=60):
     _, stdout, stderr = client.exec_command(command, timeout=timeout)

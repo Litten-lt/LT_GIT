@@ -6,7 +6,7 @@ from pathlib import Path
 HOST = "159.75.97.172"
 PORT = 22
 USER = "ubuntu"
-PASS = os.environ["SSH_PASS"]
+PASS = os.environ.get("SSH_PASS")
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL_TAR = ROOT / "artifacts" / "chesshub-dist.tar.gz"
@@ -21,7 +21,7 @@ print(f"local tar: {local_size} bytes, sha256:{local_sha}")
 
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect(HOST, PORT, USER, PASS, timeout=20, look_for_keys=False, allow_agent=False)
+c.connect(HOST, PORT, USER, PASS, timeout=20, look_for_keys=not PASS, allow_agent=not PASS)
 
 def run(cmd, timeout=60, sudo=False, label=None):
     full = f"sudo -n bash -c '{cmd.replace(chr(39), chr(39)+chr(92)+chr(39)+chr(39))}'" if sudo else cmd

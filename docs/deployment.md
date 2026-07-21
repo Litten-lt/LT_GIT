@@ -1,6 +1,6 @@
 # 生产部署
 
-仓库保留两份正式部署工具，密码只通过环境变量 `SSH_PASS` 传入，不写入代码。
+仓库保留两份正式部署工具。默认使用本机 SSH 密钥；没有配置密钥时，密码只通过环境变量 `SSH_PASS` 传入，不写入代码。
 
 部署前先在仓库根目录运行：
 
@@ -17,7 +17,6 @@ New-Item -ItemType Directory -Force ../../artifacts
 # 在 Git Bash 中执行：
 tar -czf ../../artifacts/chesshub-dist.tar.gz -C dist .
 cd ../..
-$env:SSH_PASS='服务器密码'
 python scripts/deploy/frontend.py
 ```
 
@@ -26,11 +25,12 @@ python scripts/deploy/frontend.py
 ## 后端
 
 ```powershell
-$env:SSH_PASS='服务器密码'
 python scripts/deploy/backend.py
 ```
 
 后端脚本会备份当前 `server.js` 和数据库，只替换服务入口，执行语法检查后重启 PM2 并检查健康接口。
+
+若服务器尚未配置 SSH 密钥，可在执行脚本前临时设置 `$env:SSH_PASS`。
 
 ## 完整服务器部署
 
