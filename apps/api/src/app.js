@@ -214,6 +214,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_content_notes_v2_parent ON content_notes_v2(content_id, created_at, id);
 `)
 
+// 兼容已部署数据库：定时发布是统一内容模型的可选字段。
+const contentColumns = db.prepare("PRAGMA table_info(contents)").all().map((column) => column.name)
+if (!contentColumns.includes('publish_at')) db.exec('ALTER TABLE contents ADD COLUMN publish_at INTEGER')
+
 // 老 works 表迁移: 检测 problem 字段就拼 description 重建表, 保留 id
 const worksCols = db.prepare("PRAGMA table_info(works)").all().map(c => c.name)
 if (worksCols.includes('problem')) {
@@ -540,8 +544,14 @@ const contentSelect = `
     (SELECT COUNT(*) FROM content_notes_v2 n WHERE n.content_id = c.id) AS note_count
   FROM contents c JOIN channels ch ON ch.id = c.channel_id LEFT JOIN categories cat ON cat.id = c.category_id
 `
+const publishDueContents = () => db.prepare(`
+  UPDATE contents
+  SET status = 'published', publish_at = NULL, updated_at = strftime('%s','now')
+  WHERE status = 'draft' AND publish_at IS NOT NULL AND publish_at <= strftime('%s','now')
+`).run()
 
 app.get('/api/contents', requireSession, (req, res) => {
+  publishDueContents()
   const params = []
   const where = []
   if (req.query.channel) { where.push('c.channel_id = ?'); params.push(String(req.query.channel)) }
@@ -551,6 +561,7 @@ app.get('/api/contents', requireSession, (req, res) => {
 })
 
 app.get('/api/contents/:id', requireSession, (req, res) => {
+  publishDueContents()
   const id = Number(req.params.id)
   const row = db.prepare(`${contentSelect} WHERE c.id = ?`).get(id)
   if (!row || (req.user.role !== 'admin' && row.status !== 'published')) return res.status(404).json({ error: '内容不存在' })
@@ -559,13 +570,16 @@ app.get('/api/contents/:id', requireSession, (req, res) => {
 })
 
 app.post('/api/contents', requireAuth, (req, res) => {
-  const { channel_id: channelId, category_id: rawCategory, format, title, subtitle, body, images = [], status = 'draft', featured = 0, pinned = 0 } = req.body || {}
+  const { channel_id: channelId, category_id: rawCategory, format, title, subtitle, body, images = [], status = 'draft', featured = 0, pinned = 0, publish_at: rawPublishAt } = req.body || {}
   const categoryId = rawCategory === null || rawCategory === '' || rawCategory === undefined ? null : Number(rawCategory)
+  const publishAt = rawPublishAt === null || rawPublishAt === '' || rawPublishAt === undefined ? null : Number(rawPublishAt)
   if (!['journal','life'].includes(channelId) || !['article','gallery'].includes(format) || !String(title || '').trim() || !String(body || '').trim() || !Array.isArray(images)) return res.status(400).json({ error: '内容参数无效' })
   if (!['draft','published'].includes(status)) return res.status(400).json({ error: '发布状态无效' })
+  if (publishAt !== null && (!Number.isInteger(publishAt) || publishAt <= Math.floor(Date.now() / 1000))) return res.status(400).json({ error: '定时发布时间必须晚于当前时间' })
   if (categoryId !== null && !db.prepare('SELECT id FROM categories WHERE id = ? AND channel_id = ?').get(categoryId, channelId)) return res.status(400).json({ error: '分类不属于当前频道' })
   const nowDate = new Date().toISOString().slice(0, 7).replace('-', '.')
-  const result = db.prepare(`INSERT INTO contents (channel_id, category_id, format, title, subtitle, body, images, date, status, featured, pinned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(channelId, categoryId, format, String(title).trim(), String(subtitle || '').trim() || null, String(body).trim(), JSON.stringify(images), nowDate, status, Number(Boolean(featured && status === 'published')), Number(Boolean(pinned && status === 'published')))
+  const effectiveStatus = publishAt ? 'draft' : status
+  const result = db.prepare(`INSERT INTO contents (channel_id, category_id, format, title, subtitle, body, images, date, status, featured, pinned, publish_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(channelId, categoryId, format, String(title).trim(), String(subtitle || '').trim() || null, String(body).trim(), JSON.stringify(images), nowDate, effectiveStatus, Number(Boolean(featured && effectiveStatus === 'published')), Number(Boolean(pinned && effectiveStatus === 'published')), publishAt)
   res.status(201).json({ id: Number(result.lastInsertRowid) })
 })
 
@@ -580,9 +594,13 @@ app.put('/api/contents/:id', requireAuth, (req, res) => {
   const body = req.body?.body === undefined ? current.body : String(req.body.body).trim()
   const images = req.body?.images === undefined ? JSON.parse(current.images) : req.body.images
   const status = req.body?.status ?? current.status
+  const rawPublishAt = Object.prototype.hasOwnProperty.call(req.body || {}, 'publish_at') ? req.body.publish_at : current.publish_at
+  const publishAt = rawPublishAt === null || rawPublishAt === '' || rawPublishAt === undefined ? null : Number(rawPublishAt)
   if (!['journal','life'].includes(channelId) || !['article','gallery'].includes(format) || !title || !body || !Array.isArray(images) || !['draft','published'].includes(status)) return res.status(400).json({ error: '内容参数无效' })
+  if (publishAt !== null && (!Number.isInteger(publishAt) || publishAt <= Math.floor(Date.now() / 1000))) return res.status(400).json({ error: '定时发布时间必须晚于当前时间' })
   if (categoryId !== null && !db.prepare('SELECT id FROM categories WHERE id = ? AND channel_id = ?').get(categoryId, channelId)) return res.status(400).json({ error: '分类不属于当前频道' })
-  db.prepare(`UPDATE contents SET channel_id=?, category_id=?, format=?, title=?, subtitle=?, body=?, images=?, status=?, featured=?, pinned=?, updated_at=strftime('%s','now') WHERE id=?`).run(channelId, categoryId, format, title, req.body?.subtitle === undefined ? current.subtitle : String(req.body.subtitle || '').trim() || null, body, JSON.stringify(images), status, Number(Boolean(req.body?.featured ?? current.featured) && status === 'published'), Number(Boolean(req.body?.pinned ?? current.pinned) && status === 'published'), id)
+  const effectiveStatus = publishAt ? 'draft' : status
+  db.prepare(`UPDATE contents SET channel_id=?, category_id=?, format=?, title=?, subtitle=?, body=?, images=?, status=?, featured=?, pinned=?, publish_at=?, updated_at=strftime('%s','now') WHERE id=?`).run(channelId, categoryId, format, title, req.body?.subtitle === undefined ? current.subtitle : String(req.body.subtitle || '').trim() || null, body, JSON.stringify(images), effectiveStatus, Number(Boolean(req.body?.featured ?? current.featured) && effectiveStatus === 'published'), Number(Boolean(req.body?.pinned ?? current.pinned) && effectiveStatus === 'published'), publishAt, id)
   res.json({ ok: true })
 })
 
@@ -637,8 +655,9 @@ app.get('/api/taxonomy', requireSession, (req, res) => {
     ORDER BY sort_order, id
   `).all()
   const categories = db.prepare(`
-    SELECT id, channel_id, slug, name, description, sort_order, legacy_type
-    FROM categories WHERE is_active = 1
+    SELECT cat.id, cat.channel_id, cat.slug, cat.name, cat.description, cat.sort_order, cat.legacy_type,
+      (SELECT COUNT(*) FROM contents c WHERE c.category_id = cat.id) AS content_count
+    FROM categories cat WHERE cat.is_active = 1
     ORDER BY channel_id, sort_order, id
   `).all()
   res.json({
@@ -683,13 +702,23 @@ app.patch('/api/admin/categories/:id', requireAuth, (req, res) => {
 
 app.delete('/api/admin/categories/:id', requireAuth, (req, res) => {
   const id = Number(req.params.id)
-  const current = db.prepare('SELECT id, name FROM categories WHERE id = ?').get(id)
+  const current = db.prepare('SELECT id, name, channel_id FROM categories WHERE id = ?').get(id)
   if (!current) return res.status(404).json({ error: '分类不存在' })
+  const rawMoveTo = req.body?.move_to
+  const moveTo = rawMoveTo === null || rawMoveTo === '' || rawMoveTo === undefined ? null : Number(rawMoveTo)
+  const target = moveTo === null ? null : db.prepare('SELECT id, channel_id FROM categories WHERE id = ? AND is_active = 1').get(moveTo)
+  if (moveTo !== null && (!target || target.id === id || target.channel_id !== current.channel_id)) return res.status(400).json({ error: '目标分类必须是同一频道内的其他分类' })
   const unifiedCount = db.prepare('SELECT COUNT(*) AS count FROM contents WHERE category_id = ?').get(id).count
   const legacyCount = db.prepare('SELECT COUNT(*) AS count FROM content_taxonomy WHERE category_id = ?').get(id).count
   const affected = Math.max(unifiedCount, legacyCount)
-  db.prepare('DELETE FROM categories WHERE id = ?').run(id)
-  res.json({ ok: true, affected })
+  db.transaction(() => {
+    if (moveTo !== null) {
+      db.prepare('UPDATE contents SET category_id = ?, updated_at = strftime(\'%s\',\'now\') WHERE category_id = ?').run(moveTo, id)
+      db.prepare('UPDATE content_taxonomy SET category_id = ?, updated_at = strftime(\'%s\',\'now\') WHERE category_id = ?').run(moveTo, id)
+    }
+    db.prepare('DELETE FROM categories WHERE id = ?').run(id)
+  })()
+  res.json({ ok: true, affected, moved_to: moveTo })
 })
 
 app.patch('/api/admin/content-categories', requireAuth, (req, res) => {

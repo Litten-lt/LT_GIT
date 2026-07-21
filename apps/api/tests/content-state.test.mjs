@@ -74,11 +74,11 @@ test('draft is hidden from guests while admin can manage it', async () => {
   const afterInvalidBatch = await request('/api/admin/content', { headers: { authorization: `Bearer ${admin}` } })
   assert.equal(afterInvalidBatch.body.items.find((entry) => entry.type === 'work' && entry.id === id).category_id, categoryId)
 
-  const removed = await request(`/api/admin/categories/${categoryId}`, { method: 'DELETE', headers: { authorization: `Bearer ${admin}` } })
+  const workCategoryId = taxonomy.body.channels.flatMap((channel) => channel.categories).find((entry) => entry.slug === 'work').id
+  const removed = await request(`/api/admin/categories/${categoryId}`, { method: 'DELETE', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ move_to: workCategoryId }) })
   assert.equal(removed.body.affected, 1)
   const afterCategoryDelete = await request('/api/admin/content', { headers: { authorization: `Bearer ${admin}` } })
-  assert.equal(afterCategoryDelete.body.items.find((entry) => entry.type === 'work' && entry.id === id).category_id, null)
-  const workCategoryId = taxonomy.body.channels.flatMap((channel) => channel.categories).find((entry) => entry.slug === 'work').id
+  assert.equal(afterCategoryDelete.body.items.find((entry) => entry.type === 'work' && entry.id === id).category_id, workCategoryId)
   const validBatch = await request('/api/admin/content-categories', { method: 'PATCH', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ items: [{ type: 'work', id }], category_id: workCategoryId }) })
   assert.equal(validBatch.body.updated, 1)
 

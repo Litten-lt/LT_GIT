@@ -75,6 +75,7 @@ export type Category = {
   description?: string
   sort_order: number
   legacy_type?: ContentType | null
+  content_count?: number
 }
 
 export type Channel = {
@@ -107,6 +108,7 @@ export type UnifiedContent = {
   status: 'draft' | 'published'
   featured: number
   pinned: number
+  publish_at?: number | null
   note_count: number
   created_at: number
   updated_at: number
@@ -136,8 +138,8 @@ export function updateCategory(id: number, patch: { name?: string; description?:
   return request<{ category: Category }>(`/admin/categories/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
 }
 
-export function deleteCategory(id: number) {
-  return request<{ ok: true; affected: number }>(`/admin/categories/${id}`, { method: 'DELETE' })
+export function deleteCategory(id: number, moveTo: number | null = null) {
+  return request<{ ok: true; affected: number; moved_to: number | null }>(`/admin/categories/${id}`, { method: 'DELETE', body: JSON.stringify({ move_to: moveTo }) })
 }
 
 export type Figure = ContentState & {
