@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Deploy new chesshub frontend to /var/www/chesshub/ on 159.75.97.172."""
-import os, time, paramiko, hashlib
+import os, sys, time, paramiko, hashlib
 from pathlib import Path
+
+sys.stdout.reconfigure(errors="replace")
 
 HOST = "159.75.97.172"
 PORT = 22

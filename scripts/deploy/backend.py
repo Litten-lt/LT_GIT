@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Deploy the API entry point and source modules, then restart PM2."""
-import os, time, tarfile, tempfile, paramiko
+import os, sys, time, tarfile, tempfile, paramiko
 from pathlib import Path
+
+sys.stdout.reconfigure(errors="replace")
 
 HOST, USER = "159.75.97.172", "ubuntu"
 PASSWORD = os.environ.get("SSH_PASS")
