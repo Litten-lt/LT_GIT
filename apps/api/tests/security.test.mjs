@@ -608,6 +608,7 @@ describe('G. GET 鉴权 - 防 curl 直打后端', () => {
     '/api/travels',
     '/api/notes',
     '/api/works',
+    '/api/taxonomy',
   ]
   const publicGets = [
     '/api/settings/hero-bg',

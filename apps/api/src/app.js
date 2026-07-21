@@ -42,6 +42,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true })
 
 const db = new Database(path.join(DATA_DIR, 'chesshub.db'))
 db.pragma('journal_mode = WAL')
+db.pragma('foreign_keys = ON')
 
 // 初始化表
 db.exec(`
@@ -137,6 +138,45 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_content_meta_display
     ON content_meta(status, featured DESC, pinned DESC, updated_at DESC);
+
+  -- 频道是稳定的内容方向；分类是可调整、可删除的组织方式。
+  CREATE TABLE IF NOT EXISTS channels (
+    id          TEXT PRIMARY KEY,
+    slug        TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    description TEXT,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS categories (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id  TEXT NOT NULL REFERENCES channels(id) ON DELETE RESTRICT,
+    slug        TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    description TEXT,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    legacy_type TEXT UNIQUE,
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_categories_channel
+    ON categories(channel_id, is_active, sort_order, id);
+
+  CREATE TABLE IF NOT EXISTS content_taxonomy (
+    content_type TEXT NOT NULL,
+    content_id   INTEGER NOT NULL,
+    channel_id   TEXT NOT NULL REFERENCES channels(id) ON DELETE RESTRICT,
+    category_id  INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    PRIMARY KEY (content_type, content_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_content_taxonomy_category
+    ON content_taxonomy(channel_id, category_id, content_type, content_id);
 `)
 
 // 老 works 表迁移: 检测 problem 字段就拼 description 重建表, 保留 id
@@ -193,6 +233,78 @@ if (worksCols.includes('problem')) {
   `)
   console.log('[migration] works: 迁移完成')
 }
+
+// ---------- 分类基础数据与兼容迁移 ----------
+// INSERT OR IGNORE 只负责首次初始化；以后管理中心对名称、排序和状态的修改不会被重启覆盖。
+db.exec(`
+  INSERT OR IGNORE INTO channels (id, slug, name, description, sort_order)
+  VALUES
+    ('journal', 'journal', '工作与学习', '工作记录与学习沉淀', 10),
+    ('life', 'life', '生活分享', '模型、旅行与生活随笔', 20);
+
+  INSERT OR IGNORE INTO categories (channel_id, slug, name, description, sort_order, legacy_type)
+    SELECT 'journal', 'work', '工作记录', '调试问题、过程与工程结论', 10, 'work'
+    WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'taxonomy_v1_initialized')
+    UNION ALL SELECT 'journal', 'study', '学习笔记', '原理、方法和知识沉淀', 20, 'study'
+    WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'taxonomy_v1_initialized')
+    UNION ALL SELECT 'life', 'figure', '模型手办', '收藏档案、照片与心得', 10, 'figure'
+    WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'taxonomy_v1_initialized')
+    UNION ALL SELECT 'life', 'travel', '旅行记录', '地点、见闻与途中影像', 20, 'travel'
+    WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'taxonomy_v1_initialized')
+    UNION ALL SELECT 'life', 'note', '生活随笔', '日常片段、想法和随手拍', 30, 'note'
+    WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'taxonomy_v1_initialized');
+
+  INSERT OR IGNORE INTO settings (key, value)
+  VALUES ('taxonomy_v1_initialized', '{"version":1}');
+
+  INSERT OR IGNORE INTO content_taxonomy (content_type, content_id, channel_id, category_id)
+    SELECT 'work', id, 'journal', (SELECT id FROM categories WHERE legacy_type = 'work') FROM works;
+  INSERT OR IGNORE INTO content_taxonomy (content_type, content_id, channel_id, category_id)
+    SELECT 'study', id, 'journal', (SELECT id FROM categories WHERE legacy_type = 'study') FROM studies;
+  INSERT OR IGNORE INTO content_taxonomy (content_type, content_id, channel_id, category_id)
+    SELECT 'figure', id, 'life', (SELECT id FROM categories WHERE legacy_type = 'figure') FROM figures;
+  INSERT OR IGNORE INTO content_taxonomy (content_type, content_id, channel_id, category_id)
+    SELECT 'travel', id, 'life', (SELECT id FROM categories WHERE legacy_type = 'travel') FROM travels;
+  INSERT OR IGNORE INTO content_taxonomy (content_type, content_id, channel_id, category_id)
+    SELECT 'note', id, 'life', (SELECT id FROM categories WHERE legacy_type = 'note') FROM notes;
+
+  CREATE TRIGGER IF NOT EXISTS taxonomy_work_insert AFTER INSERT ON works BEGIN
+    INSERT OR IGNORE INTO content_taxonomy (content_type, content_id, channel_id, category_id)
+    VALUES ('work', NEW.id, 'journal', (SELECT id FROM categories WHERE legacy_type = 'work'));
+  END;
+  CREATE TRIGGER IF NOT EXISTS taxonomy_study_insert AFTER INSERT ON studies BEGIN
+    INSERT OR IGNORE INTO content_taxonomy (content_type, content_id, channel_id, category_id)
+    VALUES ('study', NEW.id, 'journal', (SELECT id FROM categories WHERE legacy_type = 'study'));
+  END;
+  CREATE TRIGGER IF NOT EXISTS taxonomy_figure_insert AFTER INSERT ON figures BEGIN
+    INSERT OR IGNORE INTO content_taxonomy (content_type, content_id, channel_id, category_id)
+    VALUES ('figure', NEW.id, 'life', (SELECT id FROM categories WHERE legacy_type = 'figure'));
+  END;
+  CREATE TRIGGER IF NOT EXISTS taxonomy_travel_insert AFTER INSERT ON travels BEGIN
+    INSERT OR IGNORE INTO content_taxonomy (content_type, content_id, channel_id, category_id)
+    VALUES ('travel', NEW.id, 'life', (SELECT id FROM categories WHERE legacy_type = 'travel'));
+  END;
+  CREATE TRIGGER IF NOT EXISTS taxonomy_note_insert AFTER INSERT ON notes BEGIN
+    INSERT OR IGNORE INTO content_taxonomy (content_type, content_id, channel_id, category_id)
+    VALUES ('note', NEW.id, 'life', (SELECT id FROM categories WHERE legacy_type = 'note'));
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS taxonomy_work_delete AFTER DELETE ON works BEGIN
+    DELETE FROM content_taxonomy WHERE content_type = 'work' AND content_id = OLD.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS taxonomy_study_delete AFTER DELETE ON studies BEGIN
+    DELETE FROM content_taxonomy WHERE content_type = 'study' AND content_id = OLD.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS taxonomy_figure_delete AFTER DELETE ON figures BEGIN
+    DELETE FROM content_taxonomy WHERE content_type = 'figure' AND content_id = OLD.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS taxonomy_travel_delete AFTER DELETE ON travels BEGIN
+    DELETE FROM content_taxonomy WHERE content_type = 'travel' AND content_id = OLD.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS taxonomy_note_delete AFTER DELETE ON notes BEGIN
+    DELETE FROM content_taxonomy WHERE content_type = 'note' AND content_id = OLD.id;
+  END;
+`)
 
 const app = express()
 
@@ -255,7 +367,7 @@ const globalLimiter = rateLimit({
 app.use(globalLimiter)
 
 const { requireAuth, requireSession } = createAuthMiddleware(JWT_SECRET)
-const { contentMeta, decorateContent, contentExists } = createContentMetaService(db)
+const { contentMeta, decorateContent, contentExists, contentTaxonomy } = createContentMetaService(db)
 
 // ---------- multer 配置 ----------
 const storage = multer.diskStorage({
@@ -349,6 +461,27 @@ app.post('/api/auth/guest', loginLimiter, (req, res) => {
 app.get('/api/auth/me', requireSession, (req, res) => {
   res.json({ username: req.user.sub, role: req.user.role })
 })
+
+// 当前可用频道与分类。第一阶段只读，后续管理中心在此基础上增加增删改。
+app.get('/api/taxonomy', requireSession, (req, res) => {
+  const channels = db.prepare(`
+    SELECT id, slug, name, description, sort_order
+    FROM channels WHERE is_active = 1
+    ORDER BY sort_order, id
+  `).all()
+  const categories = db.prepare(`
+    SELECT id, channel_id, slug, name, description, sort_order, legacy_type
+    FROM categories WHERE is_active = 1
+    ORDER BY channel_id, sort_order, id
+  `).all()
+  res.json({
+    channels: channels.map((channel) => ({
+      ...channel,
+      categories: categories.filter((category) => category.channel_id === channel.id),
+    })),
+  })
+})
+
 // 统一内容管理列表 (admin)
 app.get('/api/admin/content', requireAuth, (req, res) => {
   const specs = [
@@ -357,7 +490,7 @@ app.get('/api/admin/content', requireAuth, (req, res) => {
   ]
   const items = specs.flatMap(([type, table, titleField]) => db.prepare(`
     SELECT id, ${titleField} AS title, date, created_at FROM ${table}
-  `).all().map((row) => { const meta = contentMeta(type, row.id); return { type, ...row, ...meta, updated_at: meta.state_updated_at || row.created_at } }))
+  `).all().map((row) => { const meta = contentMeta(type, row.id); return { type, ...row, ...meta, ...contentTaxonomy(type, row.id), updated_at: meta.state_updated_at || row.created_at } }))
   items.sort((a, b) => Number(b.pinned) - Number(a.pinned) || Number(b.updated_at || b.created_at || 0) - Number(a.updated_at || a.created_at || 0))
   res.json({ items })
 })
@@ -731,7 +864,7 @@ app.get('/api/works/:id', requireSession, (req, res) => {
       n.images = []
     }
   }
-  res.json({ work: { ...w, notes, note_count: notes.length } })
+  res.json({ work: { ...w, ...contentTaxonomy('work', id), notes, note_count: notes.length } })
 })
 
 // 新建 work (admin) - 极简: title + description (可空)
@@ -949,7 +1082,7 @@ app.get('/api/studies/:id', requireSession, (req, res) => {
       n.images = []
     }
   }
-  res.json({ study: { ...s, notes, note_count: notes.length } })
+  res.json({ study: { ...s, ...contentTaxonomy('study', id), notes, note_count: notes.length } })
 })
 
 // 新建 study (admin) - 极简: title + description (可空)

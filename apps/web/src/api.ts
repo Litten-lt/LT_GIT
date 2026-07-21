@@ -56,7 +56,39 @@ export function me() {
 }
 
 // ---------- 手办 ----------
-export type ContentState = { status: 'draft' | 'published'; featured: number; pinned: number; updated_at?: number }
+export type ContentTaxonomy = {
+  channel_id?: string | null
+  channel_slug?: string | null
+  channel_name?: string | null
+  category_id?: number | null
+  category_slug?: string | null
+  category_name?: string | null
+}
+
+export type ContentState = ContentTaxonomy & { status: 'draft' | 'published'; featured: number; pinned: number; updated_at?: number }
+
+export type Category = {
+  id: number
+  channel_id: string
+  slug: string
+  name: string
+  description?: string
+  sort_order: number
+  legacy_type?: ContentType | null
+}
+
+export type Channel = {
+  id: string
+  slug: string
+  name: string
+  description?: string
+  sort_order: number
+  categories: Category[]
+}
+
+export function listTaxonomy() {
+  return request<{ channels: Channel[] }>('/taxonomy')
+}
 
 export type Figure = ContentState & {
   id: number
