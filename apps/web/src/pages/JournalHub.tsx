@@ -142,7 +142,7 @@ function JournalDetail({ detail, loading, returnFilter }: { detail: Detail | nul
       <section className="reading-notes">
         {item.notes?.map((note, index) => (
           <article key={note.id} className="reading-note">
-            <div><span>{String(index + 1).padStart(2, '0')}</span><time>{new Date(note.created_at).toLocaleDateString('zh-CN')}</time></div>
+            <div><span>{String(index + 1).padStart(2, '0')}</span><time>{new Date(note.created_at < 1_000_000_000_000 ? note.created_at * 1000 : note.created_at).toLocaleDateString('zh-CN')}</time></div>
             {note.content && <div className="reading-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{note.content}</ReactMarkdown></div>}
             {'images' in note && note.images?.length > 0 && (
               <div className="reading-images">{note.images.map((src) => <img key={src} src={src} alt="" loading="lazy" />)}</div>

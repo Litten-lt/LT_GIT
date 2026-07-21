@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import App from '../App'
+import ProcessNotesEditor from '../components/ProcessNotesEditor'
 import {
   createFigure, createNote, createStudy, createTravel, createWork, filenameFromUrl,
   getStudy, getWork, listAdminContent, listFigures, listNotes, listTravels, updateContentState,
   updateFigure, updateNote, updateStudy, updateTravel, updateWork, uploadImage,
-  type ContentType,
+  type ContentType, type StudyNote, type WorkNote,
 } from '../api'
 import { ensureLoggedIn, isAdmin } from '../auth'
 
@@ -33,6 +34,7 @@ export default function UnifiedComposer() {
   const [savedAt, setSavedAt] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
+  const [processNotes, setProcessNotes] = useState<(WorkNote | StudyNote)[]>([])
 
   useEffect(() => {
     if (!ensureLoggedIn()) return
@@ -42,8 +44,8 @@ export default function UnifiedComposer() {
         if (editing && editType) {
           const meta = (await listAdminContent()).items.find((item) => item.type === editType && item.id === editId)
           if (!meta) throw new Error('内容不存在')
-          if (editType === 'work') { const { work } = await getWork(editId); setDraft({ type: editType, title: work.title, subtitle: '', body: work.description || '', status: meta.status, featured: meta.featured, pinned: meta.pinned }) }
-          else if (editType === 'study') { const { study } = await getStudy(editId); setDraft({ type: editType, title: study.title, subtitle: '', body: study.description || '', status: meta.status, featured: meta.featured, pinned: meta.pinned }) }
+          if (editType === 'work') { const { work } = await getWork(editId); setDraft({ type: editType, title: work.title, subtitle: '', body: work.description || '', status: meta.status, featured: meta.featured, pinned: meta.pinned }); setProcessNotes(work.notes || []) }
+          else if (editType === 'study') { const { study } = await getStudy(editId); setDraft({ type: editType, title: study.title, subtitle: '', body: study.description || '', status: meta.status, featured: meta.featured, pinned: meta.pinned }); setProcessNotes(study.notes || []) }
           else if (editType === 'figure') { const item = (await listFigures()).figures.find((entry) => entry.id === editId); if (!item) throw new Error('内容不存在'); setDraft({ type: editType, title: item.name, subtitle: item.brand || '', body: item.description, status: item.status, featured: item.featured, pinned: item.pinned }); setImages(item.images.map((url) => ({ key: url, url, preview: url }))) }
           else if (editType === 'travel') { const item = (await listTravels()).travels.find((entry) => entry.id === editId); if (!item) throw new Error('内容不存在'); setDraft({ type: editType, title: item.title, subtitle: item.location || '', body: item.description, status: item.status, featured: item.featured, pinned: item.pinned }); setImages(item.images.map((url) => ({ key: url, url, preview: url }))) }
           else { const item = (await listNotes()).notes.find((entry) => entry.id === editId); if (!item) throw new Error('内容不存在'); setDraft({ type: editType, title: item.title, subtitle: item.scene || '', body: item.description, status: item.status, featured: item.featured, pinned: item.pinned }); setImages(item.images.map((url) => ({ key: url, url, preview: url }))) }
@@ -97,7 +99,9 @@ export default function UnifiedComposer() {
       }
       await updateContentState(draft.type, id, { status: requestedStatus, featured: requestedStatus === 'published' ? draft.featured : 0, pinned: requestedStatus === 'published' ? draft.pinned : 0 })
       localStorage.removeItem(storageKey)
-      window.location.href = `/admin.html?saved=${draft.type}-${id}`
+      window.location.href = !editing && (draft.type === 'work' || draft.type === 'study')
+        ? `/compose.html?type=${draft.type}&id=${id}&saved=1`
+        : `/admin.html?saved=${draft.type}-${id}`
     } catch (reason: any) { alert(reason.message || '保存失败') }
     finally { setSubmitting(false) }
   }
@@ -119,7 +123,9 @@ export default function UnifiedComposer() {
           </section>
           <section className="composer-preview"><p>/ LIVE PREVIEW</p><h1>{draft.title || '尚未填写标题'}</h1>{draft.subtitle && <div className="preview-meta">{draft.subtitle}</div>}<div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{draft.body || '正文内容会实时显示在这里。'}</ReactMarkdown></div>{images.length > 0 && <div className="preview-images">{images.map((image) => <img key={image.key} src={image.preview} alt="" />)}</div>}</section>
         </div>
-        <footer className="composer-actions"><button onClick={clearDraft} className="quiet">清空</button><a href="/admin.html">取消</a><button disabled={submitting} onClick={() => save('draft')}>保存为草稿</button><button disabled={submitting} onClick={() => save('published')} className="publish">{submitting ? '处理中…' : editing ? '保存并发布' : '直接发布'}</button></footer>
+        {editing && (draft.type === 'work' || draft.type === 'study') && <ProcessNotesEditor type={draft.type} parentId={editId} initialNotes={processNotes} />}
+        {!editing && (draft.type === 'work' || draft.type === 'study') && <div className="process-note-hint"><strong>过程说明将在保存后添加</strong><span>先建立标题与摘要，随后会自动进入说明编辑。</span></div>}
+        <footer className="composer-actions"><button onClick={clearDraft} className="quiet">清空</button><a href="/admin.html">取消</a><button disabled={submitting} onClick={() => save('draft')}>{!editing && (draft.type === 'work' || draft.type === 'study') ? '保存草稿并添加说明' : '保存为草稿'}</button><button disabled={submitting} onClick={() => save('published')} className="publish">{submitting ? '处理中…' : editing ? '保存并发布' : draft.type === 'work' || draft.type === 'study' ? '发布并添加说明' : '直接发布'}</button></footer>
       </main>
     </div>
   </div></App>
