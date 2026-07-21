@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import App from '../App'
-import { getStudy, getWork, listStudies, listWorks, type Study, type Work } from '../api'
+import { getStudy, getWork, listStudies, listTaxonomy, listWorks, type Category, type Study, type Work } from '../api'
 import { isAdmin } from '../auth'
 import ReadingProgress from '../components/ReadingProgress'
 
@@ -15,6 +15,8 @@ type Entry = {
   date: string
   updated: number
   noteCount: number
+  categoryId: number | null
+  categoryName: string
 }
 
 type Detail = { kind: 'work'; item: Work } | { kind: 'study'; item: Study }
@@ -26,9 +28,8 @@ export default function JournalHub() {
   const returnFilter = params.get('from')
   const initialFilter = params.get('filter')
   const [entries, setEntries] = useState<Entry[]>([])
-  const [filter, setFilter] = useState<'all' | 'work' | 'study'>(
-    initialFilter === 'work' || initialFilter === 'study' ? initialFilter : 'all',
-  )
+  const [filter, setFilter] = useState(initialFilter || 'all')
+  const [categories, setCategories] = useState<Category[]>([])
   const [detail, setDetail] = useState<Detail | null>(null)
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
@@ -45,15 +46,16 @@ export default function JournalHub() {
       return
     }
 
-    Promise.all([listWorks(), listStudies()])
-      .then(([workData, studyData]) => {
+    Promise.all([listWorks(), listStudies(), listTaxonomy()])
+      .then(([workData, studyData, taxonomy]) => {
+        setCategories(taxonomy.channels.find((channel) => channel.id === 'journal')?.categories || [])
         const works = workData.works.map((item): Entry => ({
           id: 'work-' + item.id, rawId: item.id, kind: 'work', title: item.title,
-          description: item.description, date: item.date, updated: item.updated_at, noteCount: item.note_count,
+          description: item.description, date: item.date, updated: item.updated_at, noteCount: item.note_count, categoryId: item.category_id ?? null, categoryName: item.category_name || '其他',
         }))
         const studies = studyData.studies.map((item): Entry => ({
           id: 'study-' + item.id, rawId: item.id, kind: 'study', title: item.title,
-          description: item.description, date: item.date, updated: item.updated_at, noteCount: item.note_count,
+          description: item.description, date: item.date, updated: item.updated_at, noteCount: item.note_count, categoryId: item.category_id ?? null, categoryName: item.category_name || '其他',
         }))
         setEntries([...works, ...studies].sort((a, b) => b.updated - a.updated))
       })
@@ -63,7 +65,7 @@ export default function JournalHub() {
   const visible = useMemo(() => {
     const keyword = query.trim().toLowerCase()
     return entries.filter((entry) => {
-      const matchesFilter = filter === 'all' || entry.kind === filter
+      const matchesFilter = filter === 'all' || (filter === 'none' ? entry.categoryId === null : entry.categoryId === Number(filter))
       const matchesQuery = !keyword || (entry.title + ' ' + (entry.description || '')).toLowerCase().includes(keyword)
       return matchesFilter && matchesQuery
     })
@@ -87,12 +89,12 @@ export default function JournalHub() {
         </header>
 
         <div className="hub-toolbar" role="group" aria-label="内容筛选">
-          {[['all', '全部'], ['work', '调试与项目'], ['study', '学习与原理']].map(([value, label]) => (
-            <button key={value} onClick={() => setFilter(value as typeof filter)} className={filter === value ? 'active' : ''}>{label}</button>
-          ))}
+          <button onClick={() => setFilter('all')} className={filter === 'all' ? 'active' : ''}>全部</button>
+          {categories.map((category) => <button key={category.id} onClick={() => setFilter(String(category.id))} className={filter === String(category.id) ? 'active' : ''}>{category.name}</button>)}
+          <button onClick={() => setFilter('none')} className={filter === 'none' ? 'active' : ''}>其他</button>
           {isAdmin() && (
             <div className="ml-auto flex gap-4 text-xs">
-              <a href="/work.html">管理工作</a><a href="/study.html">管理学习</a>
+              <a href="/admin.html">进入管理中心</a>
             </div>
           )}
         </div>
@@ -110,7 +112,7 @@ export default function JournalHub() {
             <a key={entry.id} href={'/journal.html?type=' + entry.kind + '&id=' + entry.rawId + '&from=' + filter} className="journal-row focus-ring">
               <span className="journal-number">{String(index + 1).padStart(2, '0')}</span>
               <div>
-                <span className={['kind-pill', entry.kind].join(' ')}>{entry.kind === 'work' ? 'FIELD / WORK' : 'LEARN / STUDY'}</span>
+                <span className={['kind-pill', entry.kind].join(' ')}>{entry.categoryName}</span>
                 <h2>{entry.title}</h2>
                 {entry.description && <p>{entry.description.slice(0, 130)}</p>}
               </div>
@@ -124,7 +126,7 @@ export default function JournalHub() {
 }
 
 function JournalDetail({ detail, loading, returnFilter }: { detail: Detail | null; loading: boolean; returnFilter: string | null }) {
-  const backHref = returnFilter === 'work' || returnFilter === 'study' ? '/journal.html?filter=' + returnFilter : '/journal.html'
+  const backHref = returnFilter ? '/journal.html?filter=' + encodeURIComponent(returnFilter) : '/journal.html'
   if (loading) return <main className="hub-page"><p className="hub-empty">正在打开记录…</p></main>
   if (!detail) return <main className="hub-page"><a href={backHref} className="hub-back">← 返回工作与学习</a><p className="hub-empty">没有找到这条记录。</p></main>
 

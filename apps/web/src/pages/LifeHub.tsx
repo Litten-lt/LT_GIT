@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import App from '../App'
-import { listFigures, listNotes, listTravels, type Figure, type Note, type Travel } from '../api'
+import { listFigures, listNotes, listTaxonomy, listTravels, type Category, type Figure, type Note, type Travel } from '../api'
 import { isAdmin } from '../auth'
 import ReadingProgress from '../components/ReadingProgress'
 
@@ -16,6 +16,8 @@ type LifeEntry = {
   date: string
   images: string[]
   eyebrow: string
+  categoryId: number | null
+  categoryName: string
 }
 
 export default function LifeHub() {
@@ -25,26 +27,26 @@ export default function LifeHub() {
   const returnFilter = params.get('from')
   const initialFilter = params.get('filter')
   const [entries, setEntries] = useState<LifeEntry[]>([])
-  const [filter, setFilter] = useState<'all' | LifeKind>(
-    initialFilter === 'figure' || initialFilter === 'travel' || initialFilter === 'note' ? initialFilter : 'all',
-  )
+  const [filter, setFilter] = useState(initialFilter || 'all')
+  const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
 
   useEffect(() => {
-    Promise.all([listFigures(), listTravels(), listNotes()])
-      .then(([figureData, travelData, noteData]) => {
+    Promise.all([listFigures(), listTravels(), listNotes(), listTaxonomy()])
+      .then(([figureData, travelData, noteData, taxonomy]) => {
+        setCategories(taxonomy.channels.find((channel) => channel.id === 'life')?.categories || [])
         const figures = figureData.figures.map((item: Figure): LifeEntry => ({
           id: 'figure-' + item.id, rawId: item.id, kind: 'figure', title: item.name,
-          description: item.description, date: item.date, images: item.images, eyebrow: item.brand || '模型收藏',
+          description: item.description, date: item.date, images: item.images, eyebrow: item.brand || '模型收藏', categoryId: item.category_id ?? null, categoryName: item.category_name || '其他',
         }))
         const travels = travelData.travels.map((item: Travel): LifeEntry => ({
           id: 'travel-' + item.id, rawId: item.id, kind: 'travel', title: item.title,
-          description: item.description, date: item.date, images: item.images, eyebrow: item.location || '旅行记录',
+          description: item.description, date: item.date, images: item.images, eyebrow: item.location || '旅行记录', categoryId: item.category_id ?? null, categoryName: item.category_name || '其他',
         }))
         const notes = noteData.notes.map((item: Note): LifeEntry => ({
           id: 'note-' + item.id, rawId: item.id, kind: 'note', title: item.title,
-          description: item.description, date: item.date, images: item.images, eyebrow: item.scene || '生活随笔',
+          description: item.description, date: item.date, images: item.images, eyebrow: item.scene || '生活随笔', categoryId: item.category_id ?? null, categoryName: item.category_name || '其他',
         }))
         setEntries([...figures, ...travels, ...notes].sort((a, b) => b.date.localeCompare(a.date)))
       })
@@ -57,7 +59,7 @@ export default function LifeHub() {
   const visible = useMemo(() => {
     const keyword = query.trim().toLowerCase()
     return entries.filter((entry) => {
-      const matchesFilter = filter === 'all' || entry.kind === filter
+      const matchesFilter = filter === 'all' || (filter === 'none' ? entry.categoryId === null : entry.categoryId === Number(filter))
       const matchesQuery = !keyword || (entry.title + ' ' + entry.description + ' ' + entry.eyebrow).toLowerCase().includes(keyword)
       return matchesFilter && matchesQuery
     })
@@ -75,10 +77,10 @@ export default function LifeHub() {
           <div className="hub-hero-copy"><p>旅行、模型和零碎日常。技术之外，也认真收藏生活。</p><strong>{entries.length || '—'} 个片段</strong></div>
         </header>
         <div className="hub-toolbar" role="group" aria-label="生活内容筛选">
-          {[['all', '全部'], ['figure', '模型收藏'], ['travel', '旅行'], ['note', '生活随笔']].map(([value, label]) => (
-            <button key={value} onClick={() => setFilter(value as typeof filter)} className={filter === value ? 'active' : ''}>{label}</button>
-          ))}
-          {isAdmin() && <div className="ml-auto flex gap-4 text-xs"><a href="/figures.html">管理模型</a><a href="/travel.html">管理旅行</a><a href="/notes.html">管理随笔</a></div>}
+          <button onClick={() => setFilter('all')} className={filter === 'all' ? 'active' : ''}>全部</button>
+          {categories.map((category) => <button key={category.id} onClick={() => setFilter(String(category.id))} className={filter === String(category.id) ? 'active' : ''}>{category.name}</button>)}
+          <button onClick={() => setFilter('none')} className={filter === 'none' ? 'active' : ''}>其他</button>
+          {isAdmin() && <div className="ml-auto flex gap-4 text-xs"><a href="/admin.html">进入管理中心</a></div>}
         </div>
 <label className="hub-search">
           <span>搜索</span>
@@ -94,7 +96,7 @@ export default function LifeHub() {
               <div className="life-media">
                 {entry.images[0] ? <img src={entry.images[0]} alt="" loading="lazy" /> : <div className={['life-placeholder', entry.kind].join(' ')}><span>{entry.kind === 'figure' ? 'COLLECT' : entry.kind === 'travel' ? 'JOURNEY' : 'MOMENT'}</span></div>}
               </div>
-              <div className="life-card-copy"><div><span>{entry.eyebrow}</span><time>{entry.date}</time></div><h2>{entry.title}</h2><p>{entry.description.slice(0, 110)}</p></div>
+              <div className="life-card-copy"><div><span>{entry.categoryName} · {entry.eyebrow}</span><time>{entry.date}</time></div><h2>{entry.title}</h2><p>{entry.description.slice(0, 110)}</p></div>
             </a>
           ))}
         </section>
@@ -104,7 +106,7 @@ export default function LifeHub() {
 }
 
 function LifeDetail({ entry, loading, returnFilter }: { entry: LifeEntry | null; loading: boolean; returnFilter: string | null }) {
-  const backHref = returnFilter === 'figure' || returnFilter === 'travel' || returnFilter === 'note' ? '/life.html?filter=' + returnFilter : '/life.html'
+  const backHref = returnFilter ? '/life.html?filter=' + encodeURIComponent(returnFilter) : '/life.html'
   if (loading) return <main className="hub-page"><p className="hub-empty">正在打开生活片段…</p></main>
   if (!entry) return <main className="hub-page"><a href={backHref} className="hub-back">← 返回生活分享</a><p className="hub-empty">没有找到这条内容。</p></main>
   return (

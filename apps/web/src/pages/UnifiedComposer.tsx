@@ -5,9 +5,9 @@ import App from '../App'
 import ProcessNotesEditor from '../components/ProcessNotesEditor'
 import {
   createFigure, createNote, createStudy, createTravel, createWork, filenameFromUrl,
-  getStudy, getWork, listAdminContent, listFigures, listNotes, listTravels, updateContentState,
+  getStudy, getWork, listAdminContent, listFigures, listNotes, listTaxonomy, listTravels, updateContentState,
   updateFigure, updateNote, updateStudy, updateTravel, updateWork, uploadImage,
-  type ContentType, type StudyNote, type WorkNote,
+  type Channel, type ContentType, type StudyNote, type WorkNote,
 } from '../api'
 import { ensureLoggedIn, isAdmin } from '../auth'
 
@@ -18,9 +18,9 @@ const types: { value: ContentType; label: string; hint: string; image: boolean }
   { value: 'travel', label: '旅行记录', hint: '地点、见闻与途中影像', image: true },
   { value: 'note', label: '生活随笔', hint: '日常片段、想法和随手拍', image: true },
 ]
-type Draft = { type: ContentType; title: string; subtitle: string; body: string; status: 'draft' | 'published'; featured: number; pinned: number }
+type Draft = { type: ContentType; category_id: number | null; title: string; subtitle: string; body: string; status: 'draft' | 'published'; featured: number; pinned: number }
 type ImageItem = { key: string; url?: string; file?: File; preview: string }
-const emptyDraft: Draft = { type: 'work', title: '', subtitle: '', body: '', status: 'draft', featured: 0, pinned: 0 }
+const emptyDraft: Draft = { type: 'work', category_id: null, title: '', subtitle: '', body: '', status: 'draft', featured: 0, pinned: 0 }
 
 export default function UnifiedComposer() {
   const params = useMemo(() => new URLSearchParams(window.location.search), [])
@@ -35,23 +35,29 @@ export default function UnifiedComposer() {
   const [submitting, setSubmitting] = useState(false)
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
   const [processNotes, setProcessNotes] = useState<(WorkNote | StudyNote)[]>([])
+  const [channels, setChannels] = useState<Channel[]>([])
 
   useEffect(() => {
     if (!ensureLoggedIn()) return
     if (!isAdmin()) { window.location.replace('/'); return }
     ;(async () => {
       try {
+        const taxonomy = await listTaxonomy()
+        setChannels(taxonomy.channels)
         if (editing && editType) {
           const meta = (await listAdminContent()).items.find((item) => item.type === editType && item.id === editId)
           if (!meta) throw new Error('内容不存在')
-          if (editType === 'work') { const { work } = await getWork(editId); setDraft({ type: editType, title: work.title, subtitle: '', body: work.description || '', status: meta.status, featured: meta.featured, pinned: meta.pinned }); setProcessNotes(work.notes || []) }
-          else if (editType === 'study') { const { study } = await getStudy(editId); setDraft({ type: editType, title: study.title, subtitle: '', body: study.description || '', status: meta.status, featured: meta.featured, pinned: meta.pinned }); setProcessNotes(study.notes || []) }
-          else if (editType === 'figure') { const item = (await listFigures()).figures.find((entry) => entry.id === editId); if (!item) throw new Error('内容不存在'); setDraft({ type: editType, title: item.name, subtitle: item.brand || '', body: item.description, status: item.status, featured: item.featured, pinned: item.pinned }); setImages(item.images.map((url) => ({ key: url, url, preview: url }))) }
-          else if (editType === 'travel') { const item = (await listTravels()).travels.find((entry) => entry.id === editId); if (!item) throw new Error('内容不存在'); setDraft({ type: editType, title: item.title, subtitle: item.location || '', body: item.description, status: item.status, featured: item.featured, pinned: item.pinned }); setImages(item.images.map((url) => ({ key: url, url, preview: url }))) }
-          else { const item = (await listNotes()).notes.find((entry) => entry.id === editId); if (!item) throw new Error('内容不存在'); setDraft({ type: editType, title: item.title, subtitle: item.scene || '', body: item.description, status: item.status, featured: item.featured, pinned: item.pinned }); setImages(item.images.map((url) => ({ key: url, url, preview: url }))) }
+          const base = { type: editType, category_id: meta.category_id ?? null, status: meta.status, featured: meta.featured, pinned: meta.pinned }
+          if (editType === 'work') { const { work } = await getWork(editId); setDraft({ ...base, title: work.title, subtitle: '', body: work.description || '' }); setProcessNotes(work.notes || []) }
+          else if (editType === 'study') { const { study } = await getStudy(editId); setDraft({ ...base, title: study.title, subtitle: '', body: study.description || '' }); setProcessNotes(study.notes || []) }
+          else if (editType === 'figure') { const item = (await listFigures()).figures.find((entry) => entry.id === editId); if (!item) throw new Error('内容不存在'); setDraft({ ...base, title: item.name, subtitle: item.brand || '', body: item.description }); setImages(item.images.map((url) => ({ key: url, url, preview: url }))) }
+          else if (editType === 'travel') { const item = (await listTravels()).travels.find((entry) => entry.id === editId); if (!item) throw new Error('内容不存在'); setDraft({ ...base, title: item.title, subtitle: item.location || '', body: item.description }); setImages(item.images.map((url) => ({ key: url, url, preview: url }))) }
+          else { const item = (await listNotes()).notes.find((entry) => entry.id === editId); if (!item) throw new Error('内容不存在'); setDraft({ ...base, title: item.title, subtitle: item.scene || '', body: item.description }); setImages(item.images.map((url) => ({ key: url, url, preview: url }))) }
         } else {
           const saved = localStorage.getItem(storageKey)
-          if (saved) setDraft({ ...emptyDraft, ...JSON.parse(saved) })
+          const restored = saved ? { ...emptyDraft, ...JSON.parse(saved) } : emptyDraft
+          const defaultCategory = taxonomy.channels.flatMap((channel) => channel.categories).find((item) => item.legacy_type === restored.type)?.id ?? null
+          setDraft({ ...restored, category_id: restored.category_id ?? defaultCategory })
         }
       } catch (reason: any) { alert(reason.message || '加载失败'); window.location.href = '/admin.html' }
       finally { setLoading(false) }
@@ -69,7 +75,10 @@ export default function UnifiedComposer() {
   }, [draft, loading, storageKey])
 
   const config = useMemo(() => types.find((item) => item.value === draft.type)!, [draft.type])
+  const channelId = draft.type === 'work' || draft.type === 'study' ? 'journal' : 'life'
+  const categories = channels.find((channel) => channel.id === channelId)?.categories || []
   function update<K extends keyof Draft>(key: K, value: Draft[K]) { setDraft((current) => ({ ...current, [key]: value })) }
+  function updateType(type: ContentType) { const categoryId = channels.flatMap((channel) => channel.categories).find((item) => item.legacy_type === type)?.id ?? null; setDraft((current) => ({ ...current, type, category_id: categoryId })) }
   function pickFiles(files: File[]) { setImages((current) => [...current, ...files.map((file, index) => ({ key: `new-${Date.now()}-${index}`, file, preview: URL.createObjectURL(file) }))]) }
   function removeImage(index: number) { setImages((current) => current.filter((_, i) => i !== index)) }
   function moveImage(index: number, delta: number) { setImages((current) => { const target = index + delta; if (target < 0 || target >= current.length) return current; const next = [...current]; [next[index], next[target]] = [next[target], next[index]]; return next }) }
@@ -97,7 +106,7 @@ export default function UnifiedComposer() {
         else if (draft.type === 'travel') id = (await createTravel({ title: draft.title.trim(), location: editing ? draft.subtitle.trim() : draft.subtitle.trim() || undefined, description: draft.body.trim(), images: filenames })).id
         else id = (await createNote({ title: draft.title.trim(), scene: editing ? draft.subtitle.trim() : draft.subtitle.trim() || undefined, description: draft.body.trim(), images: filenames })).id
       }
-      await updateContentState(draft.type, id, { status: requestedStatus, featured: requestedStatus === 'published' ? draft.featured : 0, pinned: requestedStatus === 'published' ? draft.pinned : 0 })
+      await updateContentState(draft.type, id, { status: requestedStatus, featured: requestedStatus === 'published' ? draft.featured : 0, pinned: requestedStatus === 'published' ? draft.pinned : 0, category_id: draft.category_id })
       localStorage.removeItem(storageKey)
       window.location.href = !editing && (draft.type === 'work' || draft.type === 'study')
         ? `/compose.html?type=${draft.type}&id=${id}&saved=1`
@@ -110,11 +119,12 @@ export default function UnifiedComposer() {
   return <App current="admin"><div className="composer-shell">
     <header className="composer-heading"><div><p>{editing ? '/ EDIT CONTENT' : '/ NEW CONTENT'}</p><h1>{editing ? '编辑内容' : '统一创作台'}<span>。</span></h1></div><div className="composer-save-state"><span className="save-dot" />{savedAt ? `${savedAt} 已自动保存` : '等待输入'}</div></header>
     <div className="composer-layout">
-      <aside className="composer-types"><p>{editing ? '内容类型' : '选择内容类型'}</p>{types.map((item) => <button key={item.value} disabled={editing} onClick={() => update('type', item.value)} className={draft.type === item.value ? 'active' : ''}><strong>{item.label}</strong><span>{item.hint}</span></button>)}</aside>
+      <aside className="composer-types"><p>{editing ? '内容格式' : '选择内容格式'}</p>{types.map((item) => <button key={item.value} disabled={editing} onClick={() => updateType(item.value)} className={draft.type === item.value ? 'active' : ''}><strong>{item.label}</strong><span>{item.hint}</span></button>)}</aside>
       <main className="composer-editor">
         <div className="composer-topbar"><div><span>{config.label}</span><small>{editing ? `正在编辑 #${editId}` : config.hint}</small></div><div className="composer-tabs"><button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>编辑</button><button className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}>预览</button></div></div>
         <div className={`composer-pane ${mode === 'preview' ? 'show-preview' : ''}`}>
           <section className="composer-fields">
+            <label><span>发布分类</span><select value={draft.category_id ?? ''} onChange={(event) => update('category_id', event.target.value ? Number(event.target.value) : null)}><option value="">其他（未分类）</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
             <label><span>标题 *</span><input value={draft.title} onChange={(event) => update('title', event.target.value)} /></label>
             {config.image && <label><span>{draft.type === 'figure' ? '品牌 / 系列' : draft.type === 'travel' ? '地点' : '场景'}</span><input value={draft.subtitle} onChange={(event) => update('subtitle', event.target.value)} /></label>}
             <label className="body-field"><span>正文 * <em>支持 Markdown</em></span><textarea value={draft.body} onChange={(event) => update('body', event.target.value)} /></label>

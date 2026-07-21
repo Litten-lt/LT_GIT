@@ -482,6 +482,61 @@ app.get('/api/taxonomy', requireSession, (req, res) => {
   })
 })
 
+app.post('/api/admin/categories', requireAuth, (req, res) => {
+  const channelId = String(req.body?.channel_id || '')
+  const name = String(req.body?.name || '').trim()
+  const description = String(req.body?.description || '').trim()
+  if (!name || name.length > 30) return res.status(400).json({ error: '分类名称需为 1–30 个字符' })
+  if (!db.prepare('SELECT id FROM channels WHERE id = ? AND is_active = 1').get(channelId)) {
+    return res.status(400).json({ error: '频道不存在' })
+  }
+  const nextSort = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 10 AS value FROM categories WHERE channel_id = ?').get(channelId).value
+  const slug = `custom-${crypto.randomUUID().slice(0, 8)}`
+  const result = db.prepare(`
+    INSERT INTO categories (channel_id, slug, name, description, sort_order)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(channelId, slug, name, description || null, nextSort)
+  const category = db.prepare('SELECT id, channel_id, slug, name, description, sort_order, legacy_type FROM categories WHERE id = ?').get(result.lastInsertRowid)
+  res.status(201).json({ category })
+})
+
+app.patch('/api/admin/categories/:id', requireAuth, (req, res) => {
+  const id = Number(req.params.id)
+  const current = db.prepare('SELECT * FROM categories WHERE id = ?').get(id)
+  if (!current) return res.status(404).json({ error: '分类不存在' })
+  const name = req.body?.name === undefined ? current.name : String(req.body.name).trim()
+  const description = req.body?.description === undefined ? current.description : String(req.body.description).trim() || null
+  const sortOrder = req.body?.sort_order === undefined ? current.sort_order : Number(req.body.sort_order)
+  if (!name || name.length > 30) return res.status(400).json({ error: '分类名称需为 1–30 个字符' })
+  if (!Number.isInteger(sortOrder)) return res.status(400).json({ error: '排序值无效' })
+  db.prepare(`UPDATE categories SET name = ?, description = ?, sort_order = ?, updated_at = strftime('%s','now') WHERE id = ?`).run(name, description, sortOrder, id)
+  const category = db.prepare('SELECT id, channel_id, slug, name, description, sort_order, legacy_type FROM categories WHERE id = ?').get(id)
+  res.json({ category })
+})
+
+app.delete('/api/admin/categories/:id', requireAuth, (req, res) => {
+  const id = Number(req.params.id)
+  const current = db.prepare('SELECT id, name FROM categories WHERE id = ?').get(id)
+  if (!current) return res.status(404).json({ error: '分类不存在' })
+  const affected = db.prepare('SELECT COUNT(*) AS count FROM content_taxonomy WHERE category_id = ?').get(id).count
+  db.prepare('DELETE FROM categories WHERE id = ?').run(id)
+  res.json({ ok: true, affected })
+})
+
+app.patch('/api/admin/content-categories', requireAuth, (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : []
+  const categoryId = req.body?.category_id === null || req.body?.category_id === '' ? null : Number(req.body?.category_id)
+  if (!items.length || items.length > 500 || (categoryId !== null && !Number.isInteger(categoryId))) return res.status(400).json({ error: '批量分类参数无效' })
+  const normalized = items.map((item) => ({ type: String(item.type || ''), id: Number(item.id) }))
+  if (normalized.some((item) => !CONTENT_TYPES.has(item.type) || !Number.isInteger(item.id) || !contentExists(item.type, item.id))) return res.status(404).json({ error: '部分内容不存在' })
+  const target = categoryId === null ? null : db.prepare('SELECT id, channel_id FROM categories WHERE id = ? AND is_active = 1').get(categoryId)
+  if (categoryId !== null && !target) return res.status(400).json({ error: '目标分类不存在' })
+  if (target && normalized.some((item) => contentTaxonomy(item.type, item.id).channel_id !== target.channel_id)) return res.status(400).json({ error: '目标分类与部分内容不在同一频道' })
+  const update = db.prepare(`UPDATE content_taxonomy SET category_id = ?, updated_at = strftime('%s','now') WHERE content_type = ? AND content_id = ?`)
+  db.transaction(() => { for (const item of normalized) update.run(categoryId, item.type, item.id) })()
+  res.json({ ok: true, updated: normalized.length })
+})
+
 // 统一内容管理列表 (admin)
 app.get('/api/admin/content', requireAuth, (req, res) => {
   const specs = [
@@ -506,13 +561,25 @@ app.patch('/api/admin/content/:type/:id', requireAuth, (req, res) => {
   const featured = req.body?.featured === undefined ? Number(current.featured) : Number(Boolean(req.body.featured))
   const pinned = req.body?.pinned === undefined ? Number(current.pinned) : Number(Boolean(req.body.pinned))
   if (!['draft', 'published'].includes(status)) return res.status(400).json({ error: '状态无效' })
-  db.prepare(`
-    INSERT INTO content_meta (content_type, content_id, status, featured, pinned, updated_at)
-    VALUES (?, ?, ?, ?, ?, strftime('%s','now'))
-    ON CONFLICT(content_type, content_id) DO UPDATE SET
-      status=excluded.status, featured=excluded.featured, pinned=excluded.pinned, updated_at=excluded.updated_at
-  `).run(type, id, status, featured, pinned)
-  res.json({ ok: true, status, featured, pinned })
+  let categoryId
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'category_id')) {
+    categoryId = req.body.category_id === null || req.body.category_id === '' ? null : Number(req.body.category_id)
+    if (categoryId !== null && !Number.isInteger(categoryId)) return res.status(400).json({ error: '分类无效' })
+    const taxonomy = contentTaxonomy(type, id)
+    if (categoryId !== null && !db.prepare('SELECT id FROM categories WHERE id = ? AND channel_id = ? AND is_active = 1').get(categoryId, taxonomy.channel_id)) {
+      return res.status(400).json({ error: '分类不属于当前频道' })
+    }
+  }
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO content_meta (content_type, content_id, status, featured, pinned, updated_at)
+      VALUES (?, ?, ?, ?, ?, strftime('%s','now'))
+      ON CONFLICT(content_type, content_id) DO UPDATE SET
+        status=excluded.status, featured=excluded.featured, pinned=excluded.pinned, updated_at=excluded.updated_at
+    `).run(type, id, status, featured, pinned)
+    if (categoryId !== undefined) db.prepare(`UPDATE content_taxonomy SET category_id = ?, updated_at = strftime('%s','now') WHERE content_type = ? AND content_id = ?`).run(categoryId, type, id)
+  })()
+  res.json({ ok: true, status, featured, pinned, ...contentTaxonomy(type, id) })
 })
 
 // 列出所有手办 (公开)

@@ -90,6 +90,18 @@ export function listTaxonomy() {
   return request<{ channels: Channel[] }>('/taxonomy')
 }
 
+export function createCategory(payload: { channel_id: string; name: string; description?: string }) {
+  return request<{ category: Category }>('/admin/categories', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function updateCategory(id: number, patch: { name?: string; description?: string; sort_order?: number }) {
+  return request<{ category: Category }>(`/admin/categories/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+
+export function deleteCategory(id: number) {
+  return request<{ ok: true; affected: number }>(`/admin/categories/${id}`, { method: 'DELETE' })
+}
+
 export type Figure = ContentState & {
   id: number
   name: string
@@ -436,10 +448,17 @@ export function listAdminContent() {
 export function updateContentState(
   type: ContentType,
   id: number,
-  patch: Partial<Pick<ContentState, 'status' | 'featured' | 'pinned'>>,
+  patch: Partial<Pick<ContentState, 'status' | 'featured' | 'pinned' | 'category_id'>>,
 ) {
-  return request<{ ok: true; status: 'draft' | 'published'; featured: number; pinned: number }>(`/admin/content/${type}/${id}`, {
+  return request<{ ok: true; status: 'draft' | 'published'; featured: number; pinned: number } & ContentTaxonomy>(`/admin/content/${type}/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),
+  })
+}
+
+export function updateContentCategories(items: { type: ContentType; id: number }[], category_id: number | null) {
+  return request<{ ok: true; updated: number }>('/admin/content-categories', {
+    method: 'PATCH',
+    body: JSON.stringify({ items, category_id }),
   })
 }

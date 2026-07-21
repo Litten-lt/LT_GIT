@@ -41,6 +41,33 @@ test('draft is hidden from guests while admin can manage it', async () => {
   assert.deepEqual(taxonomy.body.channels.map((channel) => channel.id), ['journal', 'life'])
   assert.equal(taxonomy.body.channels.flatMap((channel) => channel.categories).length, 5)
 
+  const custom = await request('/api/admin/categories', { method: 'POST', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ channel_id: 'journal', name: '工程实践' }) })
+  assert.equal(custom.status, 201)
+  const categoryId = custom.body.category.id
+  const renamed = await request(`/api/admin/categories/${categoryId}`, { method: 'PATCH', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ name: '工程复盘', sort_order: 5 }) })
+  assert.equal(renamed.body.category.name, '工程复盘')
+
+  const moved = await request(`/api/admin/content/work/${id}`, { method: 'PATCH', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ category_id: categoryId }) })
+  assert.equal(moved.status, 200)
+  assert.equal(moved.body.category_name, '工程复盘')
+
+  const lifeCategory = await request('/api/admin/categories', { method: 'POST', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ channel_id: 'life', name: '观影' }) })
+  const invalidBatch = await request('/api/admin/content-categories', { method: 'PATCH', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ items: [{ type: 'work', id }], category_id: lifeCategory.body.category.id }) })
+  assert.equal(invalidBatch.status, 400)
+  const afterInvalidBatch = await request('/api/admin/content', { headers: { authorization: `Bearer ${admin}` } })
+  assert.equal(afterInvalidBatch.body.items.find((entry) => entry.type === 'work' && entry.id === id).category_id, categoryId)
+
+  const removed = await request(`/api/admin/categories/${categoryId}`, { method: 'DELETE', headers: { authorization: `Bearer ${admin}` } })
+  assert.equal(removed.body.affected, 1)
+  const afterCategoryDelete = await request('/api/admin/content', { headers: { authorization: `Bearer ${admin}` } })
+  assert.equal(afterCategoryDelete.body.items.find((entry) => entry.type === 'work' && entry.id === id).category_id, null)
+  const workCategoryId = taxonomy.body.channels.flatMap((channel) => channel.categories).find((entry) => entry.slug === 'work').id
+  const validBatch = await request('/api/admin/content-categories', { method: 'PATCH', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ items: [{ type: 'work', id }], category_id: workCategoryId }) })
+  assert.equal(validBatch.body.updated, 1)
+
+  const guestCategoryWrite = await request('/api/admin/categories', { method: 'POST', headers: { authorization: `Bearer ${guest}`, 'content-type': 'application/json' }, body: JSON.stringify({ channel_id: 'journal', name: '越权分类' }) })
+  assert.equal(guestCategoryWrite.status, 403)
+
   // 删除的是分类关系，不是内容；频道保留，分类变为 NULL，为下一阶段“其他”兜底做准备。
   const { default: Database } = await import('better-sqlite3')
   const db = new Database(path.join(base, 'chesshub.db'))
