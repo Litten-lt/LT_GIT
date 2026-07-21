@@ -30,6 +30,11 @@ test('draft is hidden from guests while admin can manage it', async () => {
   const guest = (await request('/api/auth/guest', { method: 'POST' })).body.token
   const guestList = await request('/api/works', { headers: { authorization: `Bearer ${guest}` } })
   assert.equal(guestList.body.works.some((item) => item.id === id), false)
+  const textNote = await request('/api/notes', { method: 'POST', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ title: '无图生活文章', description: '只有文字也可以发布', images: [] }) })
+  assert.equal(textNote.status, 200)
+  await request(`/api/admin/content/note/${textNote.body.id}`, { method: 'PATCH', headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'published' }) })
+  const guestNotes = await request('/api/notes', { headers: { authorization: `Bearer ${guest}` } })
+  assert.deepEqual(guestNotes.body.notes.find((item) => item.id === textNote.body.id).images, [])
   const adminList = await request('/api/admin/content', { headers: { authorization: `Bearer ${admin}` } })
   const item = adminList.body.items.find((entry) => entry.type === 'work' && entry.id === id)
   assert.equal(item.status, 'draft'); assert.equal(item.featured, 1)

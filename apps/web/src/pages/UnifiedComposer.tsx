@@ -11,12 +11,16 @@ import {
 } from '../api'
 import { ensureLoggedIn, isAdmin } from '../auth'
 
-const types: { value: ContentType; label: string; hint: string; image: boolean }[] = [
+const types: { value: ContentType; label: string; hint: string; image: boolean; imageRequired?: boolean }[] = [
   { value: 'work', label: '工作记录', hint: '调试问题、过程与工程结论', image: false },
   { value: 'study', label: '学习笔记', hint: '原理、方法和知识沉淀', image: false },
-  { value: 'figure', label: '模型手办', hint: '收藏档案、照片与心得', image: true },
-  { value: 'travel', label: '旅行记录', hint: '地点、见闻与途中影像', image: true },
+  { value: 'figure', label: '模型手办', hint: '收藏档案、照片与心得', image: true, imageRequired: true },
+  { value: 'travel', label: '旅行记录', hint: '地点、见闻与途中影像', image: true, imageRequired: true },
   { value: 'note', label: '生活随笔', hint: '日常片段、想法和随手拍', image: true },
+]
+const publishingChannels: { id: 'journal' | 'life'; label: string; hint: string; type: ContentType }[] = [
+  { id: 'journal', label: '工作与学习', hint: '技术记录、项目复盘与知识沉淀', type: 'work' },
+  { id: 'life', label: '生活分享', hint: '生活文章，可选配图片', type: 'note' },
 ]
 type Draft = { type: ContentType; category_id: number | null; title: string; subtitle: string; body: string; status: 'draft' | 'published'; featured: number; pinned: number }
 type ImageItem = { key: string; url?: string; file?: File; preview: string }
@@ -76,18 +80,19 @@ export default function UnifiedComposer() {
 
   const config = useMemo(() => types.find((item) => item.value === draft.type)!, [draft.type])
   const channelId = draft.type === 'work' || draft.type === 'study' ? 'journal' : 'life'
+  const channelConfig = publishingChannels.find((item) => item.id === channelId)!
   const categories = channels.find((channel) => channel.id === channelId)?.categories || []
   function update<K extends keyof Draft>(key: K, value: Draft[K]) { setDraft((current) => ({ ...current, [key]: value })) }
-  function updateType(type: ContentType) { const categoryId = channels.flatMap((channel) => channel.categories).find((item) => item.legacy_type === type)?.id ?? null; setDraft((current) => ({ ...current, type, category_id: categoryId })) }
+  function updateChannel(nextChannel: 'journal' | 'life') { const next = publishingChannels.find((item) => item.id === nextChannel)!; const categoryId = channels.find((channel) => channel.id === nextChannel)?.categories[0]?.id ?? null; setDraft((current) => ({ ...current, type: next.type, category_id: categoryId, subtitle: '' })); setImages([]) }
   function pickFiles(files: File[]) { setImages((current) => [...current, ...files.map((file, index) => ({ key: `new-${Date.now()}-${index}`, file, preview: URL.createObjectURL(file) }))]) }
   function removeImage(index: number) { setImages((current) => current.filter((_, i) => i !== index)) }
   function moveImage(index: number, delta: number) { setImages((current) => { const target = index + delta; if (target < 0 || target >= current.length) return current; const next = [...current]; [next[index], next[target]] = [next[target], next[index]]; return next }) }
-  function clearDraft() { if (!confirm('清空当前内容？')) return; setDraft({ ...emptyDraft, type: draft.type }); setImages([]); localStorage.removeItem(storageKey) }
+  function clearDraft() { if (!confirm('清空当前内容？')) return; setDraft({ ...emptyDraft, type: draft.type, category_id: draft.category_id }); setImages([]); localStorage.removeItem(storageKey) }
 
   async function save(requestedStatus: 'draft' | 'published') {
     if (!draft.title.trim()) return alert('请填写标题')
     if (!draft.body.trim()) return alert('请填写正文')
-    if (config.image && images.length === 0) return alert('这类内容至少需要一张图片')
+    if (config.imageRequired && images.length === 0) return alert('这类旧内容至少需要一张图片')
     setSubmitting(true)
     try {
       const filenames: string[] = []
@@ -119,16 +124,16 @@ export default function UnifiedComposer() {
   return <App current="admin"><div className="composer-shell">
     <header className="composer-heading"><div><p>{editing ? '/ EDIT CONTENT' : '/ NEW CONTENT'}</p><h1>{editing ? '编辑内容' : '统一创作台'}<span>。</span></h1></div><div className="composer-save-state"><span className="save-dot" />{savedAt ? `${savedAt} 已自动保存` : '等待输入'}</div></header>
     <div className="composer-layout">
-      <aside className="composer-types"><p>{editing ? '内容格式' : '选择内容格式'}</p>{types.map((item) => <button key={item.value} disabled={editing} onClick={() => updateType(item.value)} className={draft.type === item.value ? 'active' : ''}><strong>{item.label}</strong><span>{item.hint}</span></button>)}</aside>
+      <aside className="composer-types"><p>{editing ? '发布方向' : '选择发布方向'}</p>{publishingChannels.map((item) => <button key={item.id} disabled={editing} onClick={() => updateChannel(item.id)} className={channelId === item.id ? 'active' : ''}><strong>{item.label}</strong><span>{item.hint}</span></button>)}</aside>
       <main className="composer-editor">
-        <div className="composer-topbar"><div><span>{config.label}</span><small>{editing ? `正在编辑 #${editId}` : config.hint}</small></div><div className="composer-tabs"><button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>编辑</button><button className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}>预览</button></div></div>
+        <div className="composer-topbar"><div><span>{channelConfig.label}</span><small>{editing ? `正在编辑 #${editId}` : channelConfig.hint}</small></div><div className="composer-tabs"><button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>编辑</button><button className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}>预览</button></div></div>
         <div className={`composer-pane ${mode === 'preview' ? 'show-preview' : ''}`}>
           <section className="composer-fields">
             <label><span>发布分类</span><select value={draft.category_id ?? ''} onChange={(event) => update('category_id', event.target.value ? Number(event.target.value) : null)}><option value="">其他（未分类）</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
             <label><span>标题 *</span><input value={draft.title} onChange={(event) => update('title', event.target.value)} /></label>
-            {config.image && <label><span>{draft.type === 'figure' ? '品牌 / 系列' : draft.type === 'travel' ? '地点' : '场景'}</span><input value={draft.subtitle} onChange={(event) => update('subtitle', event.target.value)} /></label>}
+            {config.image && <label><span>{editing && draft.type === 'figure' ? '品牌 / 系列' : editing && draft.type === 'travel' ? '地点' : '补充说明'}</span><input value={draft.subtitle} onChange={(event) => update('subtitle', event.target.value)} /></label>}
             <label className="body-field"><span>正文 * <em>支持 Markdown</em></span><textarea value={draft.body} onChange={(event) => update('body', event.target.value)} /></label>
-            {config.image && <><label className="composer-upload"><input type="file" accept="image/*" multiple onChange={(event) => pickFiles(Array.from(event.target.files || []))} /><strong>继续添加图片</strong><span>已选 {images.length} 张 · 可调整顺序</span></label>{images.length > 0 && <div className="composer-images">{images.map((image, index) => <div key={image.key}><img src={image.preview} alt="" /><button className="image-remove" onClick={() => removeImage(index)}>×</button><div className="image-order"><button disabled={index === 0} onClick={() => moveImage(index, -1)}>←</button><button disabled={index === images.length - 1} onClick={() => moveImage(index, 1)}>→</button></div><span>{index === 0 ? '封面 · ' : ''}{image.file?.name || filenameFromUrl(image.url || '')}</span></div>)}</div>}</>}
+            {config.image && <><label className="composer-upload"><input type="file" accept="image/*" multiple onChange={(event) => pickFiles(Array.from(event.target.files || []))} /><strong>{images.length ? '继续添加图片' : config.imageRequired ? '添加图片（必填）' : '添加图片（可选）'}</strong><span>已选 {images.length} 张 · 可调整顺序</span></label>{images.length > 0 && <div className="composer-images">{images.map((image, index) => <div key={image.key}><img src={image.preview} alt="" /><button className="image-remove" onClick={() => removeImage(index)}>×</button><div className="image-order"><button disabled={index === 0} onClick={() => moveImage(index, -1)}>←</button><button disabled={index === images.length - 1} onClick={() => moveImage(index, 1)}>→</button></div><span>{index === 0 ? '封面 · ' : ''}{image.file?.name || filenameFromUrl(image.url || '')}</span></div>)}</div>}</>}
             <div className="composer-state"><span>发布设置</span><label><input type="checkbox" checked={Boolean(draft.featured)} onChange={(event) => update('featured', Number(event.target.checked))} />主页精选</label><label><input type="checkbox" checked={Boolean(draft.pinned)} onChange={(event) => update('pinned', Number(event.target.checked))} />栏目置顶</label></div>
           </section>
           <section className="composer-preview"><p>/ LIVE PREVIEW</p><h1>{draft.title || '尚未填写标题'}</h1>{draft.subtitle && <div className="preview-meta">{draft.subtitle}</div>}<div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{draft.body || '正文内容会实时显示在这里。'}</ReactMarkdown></div>{images.length > 0 && <div className="preview-images">{images.map((image) => <img key={image.key} src={image.preview} alt="" />)}</div>}</section>

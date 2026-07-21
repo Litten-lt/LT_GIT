@@ -4,7 +4,6 @@ import CategoryManager from '../components/CategoryManager'
 import { deleteFigure, deleteNote, deleteStudy, deleteTravel, deleteWork, listAdminContent, listTaxonomy, updateContentCategories, updateContentState, type AdminContentItem, type Channel, type ContentType } from '../api'
 import { ensureLoggedIn, isAdmin } from '../auth'
 
-const labels: Record<ContentType, string> = { work: '工作', study: '学习', figure: '模型', travel: '旅行', note: '随笔' }
 const publicPages: Record<ContentType, string> = { work: '/journal.html?type=work&id=', study: '/journal.html?type=study&id=', figure: '/life.html?type=figure&id=', travel: '/life.html?type=travel&id=', note: '/life.html?type=note&id=' }
 const keyOf = (item: AdminContentItem) => `${item.type}-${item.id}`
 
@@ -15,7 +14,7 @@ export default function AdminDashboard() {
   const [saving, setSaving] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
-  const [type, setType] = useState<'all' | ContentType>(initialType && labels[initialType] ? initialType : 'all')
+  const [channel, setChannel] = useState<'all' | 'journal' | 'life'>(initialType === 'work' || initialType === 'study' ? 'journal' : initialType ? 'life' : 'all')
   const [status, setStatus] = useState<'all' | 'draft' | 'published' | 'featured'>('all')
   const [channels, setChannels] = useState<Channel[]>([])
   const [category, setCategory] = useState('all')
@@ -32,8 +31,8 @@ export default function AdminDashboard() {
   const filtered = useMemo(() => items.filter((item) => {
     const q = query.trim().toLowerCase()
     const categoryMatch = category === 'all' || (category === 'none' ? item.category_id == null : item.category_id === Number(category))
-    return (!q || item.title.toLowerCase().includes(q)) && (type === 'all' || item.type === type) && categoryMatch && (status === 'all' || (status === 'featured' ? Boolean(item.featured) : item.status === status))
-  }), [items, query, type, category, status])
+    return (!q || item.title.toLowerCase().includes(q)) && (channel === 'all' || item.channel_id === channel) && categoryMatch && (status === 'all' || (status === 'featured' ? Boolean(item.featured) : item.status === status))
+  }), [items, query, channel, category, status])
   const counts = useMemo(() => ({ total: items.length, published: items.filter((item) => item.status === 'published').length, draft: items.filter((item) => item.status === 'draft').length, featured: items.filter((item) => item.featured).length }), [items])
   const selectedItems = items.filter((item) => selected.has(keyOf(item)))
 
@@ -75,11 +74,11 @@ export default function AdminDashboard() {
     <section className="content-stats"><button onClick={() => setStatus('all')} className={status === 'all' ? 'active' : ''}><strong>{counts.total}</strong><span>全部</span></button><button onClick={() => setStatus('published')} className={status === 'published' ? 'active' : ''}><strong>{counts.published}</strong><span>已发布</span></button><button onClick={() => setStatus('draft')} className={status === 'draft' ? 'active' : ''}><strong>{counts.draft}</strong><span>草稿</span></button><button onClick={() => setStatus('featured')} className={status === 'featured' ? 'active' : ''}><strong>{counts.featured}</strong><span>精选</span></button></section>
     <CategoryManager channels={channels} reload={load} />
     <section className="content-manager">
-      <div className="content-toolbar"><label><span>搜索</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入标题…" /></label><label><span>内容格式</span><select value={type} onChange={(event) => setType(event.target.value as typeof type)}><option value="all">全部格式</option>{Object.entries(labels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label><span>分类</span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">全部分类</option><option value="none">其他（未分类）</option>{channels.map((channel) => <optgroup key={channel.id} label={channel.name}>{channel.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</optgroup>)}</select></label><a href="/compose.html" className="content-new">＋ 新建内容</a></div>
+      <div className="content-toolbar"><label><span>搜索</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入标题…" /></label><label><span>频道</span><select value={channel} onChange={(event) => setChannel(event.target.value as typeof channel)}><option value="all">全部频道</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label><span>分类</span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">全部分类</option><option value="none">其他（未分类）</option>{channels.map((channel) => <optgroup key={channel.id} label={channel.name}>{channel.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</optgroup>)}</select></label><a href="/compose.html" className="content-new">＋ 新建内容</a></div>
       <div className="batch-toolbar"><label><input type="checkbox" checked={filtered.length > 0 && filtered.every((item) => selected.has(keyOf(item)))} onChange={toggleAll} />选择当前结果</label><span>已选 {selected.size} 条</span><select value={moveTo} onChange={(event) => setMoveTo(event.target.value)}><option value="">转移分类…</option><option value="none">其他（未分类）</option>{channels.map((channel) => <optgroup key={channel.id} label={channel.name}>{channel.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</optgroup>)}</select><button disabled={!selected.size || !moveTo || saving === 'batch'} onClick={batchCategory}>转移</button><button disabled={!selected.size || saving === 'batch'} onClick={() => batchStatus('published')}>发布</button><button disabled={!selected.size || saving === 'batch'} onClick={() => batchStatus('draft')}>撤回</button><button disabled={!selected.size || saving === 'batch'} className="danger" onClick={batchDelete}>删除</button></div>
       <div className="content-table">{loading ? <p className="content-empty">正在读取内容…</p> : filtered.length === 0 ? <p className="content-empty">没有符合条件的内容</p> : filtered.map((item) => { const key=keyOf(item), busy=saving===key; return <article key={key} className={item.status === 'draft' ? 'is-draft' : ''}>
         <input className="content-check" type="checkbox" checked={selected.has(key)} onChange={() => toggle(key)} aria-label={`选择 ${item.title}`} />
-        <div className="content-main"><span className={`content-kind kind-${item.type}`}>{item.category_name || '其他'}</span><div><h2>{item.title}</h2><p>{item.channel_name} · {labels[item.type]}格式 · {item.date} · #{String(item.id).padStart(3,'0')}</p></div></div>
+        <div className="content-main"><span className={`content-kind kind-${item.type}`}>{item.category_name || '其他'}</span><div><h2>{item.title}</h2><p>{item.channel_name} · {item.date} · #{String(item.id).padStart(3,'0')}</p></div></div>
         <div className="content-flags"><button disabled={busy} onClick={() => patch(item,{status:item.status==='published'?'draft':'published',...(item.status==='published'?{featured:0,pinned:0}:{})})} className={item.status==='published'?'on':''}>{item.status==='published'?'已发布':'草稿'}</button><button disabled={busy||item.status==='draft'} onClick={() => patch(item,{featured:item.featured?0:1})} className={item.featured?'on featured':''}>精选</button><button disabled={busy||item.status==='draft'} onClick={() => patch(item,{pinned:item.pinned?0:1})} className={item.pinned?'on':''}>置顶</button></div>
         <div className="content-links"><a href={`/compose.html?type=${item.type}&id=${item.id}`}>编辑</a>{item.status==='published'&&<a href={`${publicPages[item.type]}${item.id}`}>查看 ↗</a>}<button onClick={() => remove(item)} className="delete-link">删除</button></div>
       </article>})}</div>

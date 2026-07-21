@@ -819,8 +819,8 @@ app.get('/api/notes', requireSession, (req, res) => {
 // 新建 note (admin)
 app.post('/api/notes', requireAuth, (req, res) => {
   const { title, scene, description, images, date } = req.body || {}
-  if (!title || !description || !Array.isArray(images) || images.length === 0) {
-    return res.status(400).json({ error: 'title, description, images 必填' })
+  if (!title || !description || !Array.isArray(images)) {
+    return res.status(400).json({ error: 'title, description 必填，images 必须是数组' })
   }
 
   const result = db.prepare(`
@@ -869,8 +869,8 @@ app.put('/api/notes/:id', requireAuth, (req, res) => {
   if (description !== undefined && !description.trim()) {
     return res.status(400).json({ error: '描述不能为空' })
   }
-  if (images !== undefined && (!Array.isArray(images) || images.length === 0)) {
-    return res.status(400).json({ error: 'images 必须是非空数组' })
+  if (images !== undefined && !Array.isArray(images)) {
+    return res.status(400).json({ error: 'images 必须是数组' })
   }
 
   let imagesToDelete = []
