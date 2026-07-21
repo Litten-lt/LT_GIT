@@ -212,11 +212,20 @@ db.exec(`
     UNIQUE(legacy_type, legacy_id)
   );
   CREATE INDEX IF NOT EXISTS idx_content_notes_v2_parent ON content_notes_v2(content_id, created_at, id);
+
+  CREATE TABLE IF NOT EXISTS content_revisions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_id  INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+    snapshot    TEXT NOT NULL,
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_content_revisions_parent ON content_revisions(content_id, created_at DESC, id DESC);
 `)
 
 // 兼容已部署数据库：定时发布是统一内容模型的可选字段。
 const contentColumns = db.prepare("PRAGMA table_info(contents)").all().map((column) => column.name)
 if (!contentColumns.includes('publish_at')) db.exec('ALTER TABLE contents ADD COLUMN publish_at INTEGER')
+if (!contentColumns.includes('deleted_at')) db.exec('ALTER TABLE contents ADD COLUMN deleted_at INTEGER')
 
 // 老 works 表迁移: 检测 problem 字段就拼 description 重建表, 保留 id
 const worksCols = db.prepare("PRAGMA table_info(works)").all().map(c => c.name)
@@ -554,6 +563,8 @@ app.get('/api/contents', requireSession, (req, res) => {
   publishDueContents()
   const params = []
   const where = []
+  if (req.user.role === 'admin' && req.query.include_deleted === '1') where.push('1 = 1')
+  else where.push('c.deleted_at IS NULL')
   if (req.query.channel) { where.push('c.channel_id = ?'); params.push(String(req.query.channel)) }
   if (req.user.role !== 'admin') where.push("c.status = 'published'")
   const rows = db.prepare(`${contentSelect} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY c.pinned DESC, c.updated_at DESC, c.id DESC`).all(...params)
@@ -564,7 +575,7 @@ app.get('/api/contents/:id', requireSession, (req, res) => {
   publishDueContents()
   const id = Number(req.params.id)
   const row = db.prepare(`${contentSelect} WHERE c.id = ?`).get(id)
-  if (!row || (req.user.role !== 'admin' && row.status !== 'published')) return res.status(404).json({ error: '内容不存在' })
+  if (!row || row.deleted_at || (req.user.role !== 'admin' && row.status !== 'published')) return res.status(404).json({ error: '内容不存在' })
   const notes = db.prepare('SELECT id, body, images, created_at, updated_at FROM content_notes_v2 WHERE content_id = ? ORDER BY created_at, id').all(id).map((note) => ({ ...note, images: JSON.parse(note.images || '[]').map((name) => `${PUBLIC_BASE_URL}/data/figures/${name}`) }))
   res.json({ content: { ...contentRow(row), notes } })
 })
@@ -600,7 +611,11 @@ app.put('/api/contents/:id', requireAuth, (req, res) => {
   if (publishAt !== null && (!Number.isInteger(publishAt) || publishAt <= Math.floor(Date.now() / 1000))) return res.status(400).json({ error: '定时发布时间必须晚于当前时间' })
   if (categoryId !== null && !db.prepare('SELECT id FROM categories WHERE id = ? AND channel_id = ?').get(categoryId, channelId)) return res.status(400).json({ error: '分类不属于当前频道' })
   const effectiveStatus = publishAt ? 'draft' : status
-  db.prepare(`UPDATE contents SET channel_id=?, category_id=?, format=?, title=?, subtitle=?, body=?, images=?, status=?, featured=?, pinned=?, publish_at=?, updated_at=strftime('%s','now') WHERE id=?`).run(channelId, categoryId, format, title, req.body?.subtitle === undefined ? current.subtitle : String(req.body.subtitle || '').trim() || null, body, JSON.stringify(images), effectiveStatus, Number(Boolean(req.body?.featured ?? current.featured) && effectiveStatus === 'published'), Number(Boolean(req.body?.pinned ?? current.pinned) && effectiveStatus === 'published'), publishAt, id)
+  db.transaction(() => {
+    db.prepare('INSERT INTO content_revisions (content_id, snapshot) VALUES (?, ?)').run(id, JSON.stringify(current))
+    db.prepare(`UPDATE contents SET channel_id=?, category_id=?, format=?, title=?, subtitle=?, body=?, images=?, status=?, featured=?, pinned=?, publish_at=?, updated_at=strftime('%s','now') WHERE id=?`).run(channelId, categoryId, format, title, req.body?.subtitle === undefined ? current.subtitle : String(req.body.subtitle || '').trim() || null, body, JSON.stringify(images), effectiveStatus, Number(Boolean(req.body?.featured ?? current.featured) && effectiveStatus === 'published'), Number(Boolean(req.body?.pinned ?? current.pinned) && effectiveStatus === 'published'), publishAt, id)
+    db.prepare('DELETE FROM content_revisions WHERE content_id = ? AND id NOT IN (SELECT id FROM content_revisions WHERE content_id = ? ORDER BY created_at DESC, id DESC LIMIT 20)').run(id, id)
+  })()
   res.json({ ok: true })
 })
 
@@ -608,7 +623,40 @@ app.delete('/api/contents/:id', requireAuth, (req, res) => {
   const id = Number(req.params.id)
   const current = db.prepare('SELECT images FROM contents WHERE id = ?').get(id)
   if (!current) return res.status(404).json({ error: '内容不存在' })
-  db.prepare('DELETE FROM contents WHERE id = ?').run(id)
+  db.prepare("UPDATE contents SET deleted_at=strftime('%s','now'), updated_at=strftime('%s','now') WHERE id = ?").run(id)
+  res.json({ ok: true })
+})
+
+app.post('/api/contents/:id/restore', requireAuth, (req, res) => {
+  const result = db.prepare("UPDATE contents SET deleted_at=NULL, updated_at=strftime('%s','now') WHERE id = ? AND deleted_at IS NOT NULL").run(Number(req.params.id))
+  if (!result.changes) return res.status(404).json({ error: '回收站中没有这条内容' })
+  res.json({ ok: true })
+})
+
+app.delete('/api/contents/:id/permanent', requireAuth, (req, res) => {
+  const result = db.prepare('DELETE FROM contents WHERE id = ? AND deleted_at IS NOT NULL').run(Number(req.params.id))
+  if (!result.changes) return res.status(404).json({ error: '只能彻底删除回收站中的内容' })
+  res.json({ ok: true })
+})
+
+app.get('/api/contents/:id/revisions', requireAuth, (req, res) => {
+  const revisions = db.prepare('SELECT id, created_at, snapshot FROM content_revisions WHERE content_id = ? ORDER BY created_at DESC, id DESC').all(Number(req.params.id)).map((row) => {
+    const snapshot = JSON.parse(row.snapshot)
+    return { id: row.id, created_at: row.created_at, title: snapshot.title, body: snapshot.body, subtitle: snapshot.subtitle }
+  })
+  res.json({ revisions })
+})
+
+app.post('/api/contents/:id/revisions/:revisionId/restore', requireAuth, (req, res) => {
+  const id = Number(req.params.id)
+  const current = db.prepare('SELECT * FROM contents WHERE id = ? AND deleted_at IS NULL').get(id)
+  const revision = db.prepare('SELECT snapshot FROM content_revisions WHERE id = ? AND content_id = ?').get(Number(req.params.revisionId), id)
+  if (!current || !revision) return res.status(404).json({ error: '内容或历史版本不存在' })
+  const snapshot = JSON.parse(revision.snapshot)
+  db.transaction(() => {
+    db.prepare('INSERT INTO content_revisions (content_id, snapshot) VALUES (?, ?)').run(id, JSON.stringify(current))
+    db.prepare("UPDATE contents SET title=?, subtitle=?, body=?, images=?, updated_at=strftime('%s','now') WHERE id=?").run(snapshot.title, snapshot.subtitle, snapshot.body, snapshot.images, id)
+  })()
   res.json({ ok: true })
 })
 

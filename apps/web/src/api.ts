@@ -109,6 +109,7 @@ export type UnifiedContent = {
   featured: number
   pinned: number
   publish_at?: number | null
+  deleted_at?: number | null
   note_count: number
   created_at: number
   updated_at: number
@@ -117,8 +118,9 @@ export type UnifiedContent = {
   notes?: UnifiedNote[]
 }
 
-export function listContents(channel?: 'journal' | 'life') {
-  return request<{ contents: UnifiedContent[] }>(`/contents${channel ? `?channel=${channel}` : ''}`)
+export function listContents(channel?: 'journal' | 'life', includeDeleted = false) {
+  const params = new URLSearchParams(); if (channel) params.set('channel', channel); if (includeDeleted) params.set('include_deleted', '1')
+  return request<{ contents: UnifiedContent[] }>(`/contents${params.size ? `?${params}` : ''}`)
 }
 export function getContent(id: number) { return request<{ content: UnifiedContent }>(`/contents/${id}`) }
 export function createContent(payload: Partial<UnifiedContent> & Pick<UnifiedContent, 'channel_id' | 'format' | 'title' | 'body' | 'images'>) {
@@ -126,6 +128,11 @@ export function createContent(payload: Partial<UnifiedContent> & Pick<UnifiedCon
 }
 export function updateContent(id: number, payload: Partial<UnifiedContent>) { return request<{ ok: true }>(`/contents/${id}`, { method: 'PUT', body: JSON.stringify(payload) }) }
 export function deleteContent(id: number) { return request<{ ok: true }>(`/contents/${id}`, { method: 'DELETE' }) }
+export function restoreContent(id: number) { return request<{ ok: true }>(`/contents/${id}/restore`, { method: 'POST' }) }
+export function deleteContentPermanently(id: number) { return request<{ ok: true }>(`/contents/${id}/permanent`, { method: 'DELETE' }) }
+export type ContentRevision = { id: number; created_at: number; title: string; subtitle?: string | null; body: string }
+export function listContentRevisions(id: number) { return request<{ revisions: ContentRevision[] }>(`/contents/${id}/revisions`) }
+export function restoreContentRevision(id: number, revisionId: number) { return request<{ ok: true }>(`/contents/${id}/revisions/${revisionId}/restore`, { method: 'POST' }) }
 export function addContentNote(contentId: number, body: string, files: File[] = []) { const fd = new FormData(); fd.append('body', body); files.forEach((file) => fd.append('images', file)); return request<{ id: number }>(`/contents/${contentId}/notes`, { method: 'POST', body: fd }) }
 export function updateContentNote(contentId: number, noteId: number, body: string) { return request<{ ok: true }>(`/contents/${contentId}/notes/${noteId}`, { method: 'PUT', body: JSON.stringify({ body }) }) }
 export function deleteContentNote(contentId: number, noteId: number) { return request<{ ok: true }>(`/contents/${contentId}/notes/${noteId}`, { method: 'DELETE' }) }

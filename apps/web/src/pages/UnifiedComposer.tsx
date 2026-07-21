@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import App from '../App'
 import ProcessNotesEditor from '../components/ProcessNotesEditor'
-import { createContent, filenameFromUrl, getContent, listContents, listTaxonomy, updateContent, uploadImage, type Channel, type UnifiedNote } from '../api'
+import { createContent, filenameFromUrl, getContent, listContentRevisions, listContents, listTaxonomy, restoreContentRevision, updateContent, uploadImage, type Channel, type ContentRevision, type UnifiedNote } from '../api'
 import { ensureLoggedIn, isAdmin } from '../auth'
 
 type Draft = { channel_id: 'journal' | 'life'; category_id: number | null; title: string; subtitle: string; body: string; status: 'draft' | 'published'; featured: number; pinned: number; publish_at: number | null }
@@ -31,6 +31,8 @@ export default function UnifiedComposer() {
   const [submitting, setSubmitting] = useState(false)
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
   const [dirty, setDirty] = useState(false)
+  const [revisions, setRevisions] = useState<ContentRevision[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
   const dirtyRef = useRef(false)
   const storageKey = editing ? `chesshub:content-edit:${contentId}` : 'chesshub:composer-unified:v1'
 
@@ -53,6 +55,7 @@ export default function UnifiedComposer() {
           const restored = local && confirm('发现这篇内容有未提交的本地修改，是否恢复？') ? { ...serverDraft, ...JSON.parse(local).draft } : serverDraft
           setDraft(restored)
           setImages(item.images.map((url) => ({ key: url, url, preview: url }))); setNotes(item.notes || [])
+          setRevisions((await listContentRevisions(id)).revisions)
         } else {
           const saved = localStorage.getItem('chesshub:composer-unified:v1')
           const local = saved ? JSON.parse(saved) : null
@@ -92,6 +95,12 @@ export default function UnifiedComposer() {
       window.location.href = draft.channel_id === 'journal' ? `/compose.html?id=${id}&saved=1` : `/admin.html?saved=${id}`
     } catch (reason: any) { alert(reason.message || '保存失败') } finally { setSubmitting(false) }
   }
+  async function restoreRevision(revision: ContentRevision) {
+    if (!confirm(`恢复到 ${new Date(revision.created_at * 1000).toLocaleString('zh-CN')} 的版本？当前版本也会保留在历史中。`)) return
+    setSubmitting(true)
+    try { await restoreContentRevision(contentId, revision.id); dirtyRef.current = false; localStorage.removeItem(storageKey); window.location.reload() }
+    catch (reason: any) { alert(reason.message || '恢复历史版本失败'); setSubmitting(false) }
+  }
 
   if (loading) return <App current="admin"><div className="content-empty">正在加载创作台…</div></App>
   return <App current="admin"><div className="composer-shell">
@@ -106,6 +115,7 @@ export default function UnifiedComposer() {
           {draft.channel_id === 'life' && <><label className="composer-upload"><input type="file" accept="image/*" multiple onChange={(event) => pickFiles(Array.from(event.target.files || []))} /><strong>{images.length ? '继续添加图片' : '添加图片（可选）'}</strong><span>已选 {images.length} 张 · 可调整顺序</span></label>{images.length > 0 && <div className="composer-images">{images.map((image, index) => <div key={image.key}><img src={image.preview} alt="" /><button className="image-remove" onClick={() => removeImage(index)}>×</button><div className="image-order"><button disabled={index === 0} onClick={() => moveImage(index, -1)}>←</button><button disabled={index === images.length - 1} onClick={() => moveImage(index, 1)}>→</button></div><span>{index === 0 ? '封面 · ' : ''}{image.file?.name || filenameFromUrl(image.url || '')}</span></div>)}</div>}</>}
           <div className="composer-state"><span>发布设置</span><label><input type="checkbox" checked={Boolean(draft.featured)} onChange={(event) => update('featured', Number(event.target.checked))} />主页精选</label><label><input type="checkbox" checked={Boolean(draft.pinned)} onChange={(event) => update('pinned', Number(event.target.checked))} />栏目置顶</label><label className="schedule-field">定时发布 <input type="datetime-local" value={localDateTime(draft.publish_at)} min={localDateTime(Math.floor(Date.now() / 1000) + 60)} onChange={(event) => update('publish_at', event.target.value ? Math.floor(new Date(event.target.value).getTime() / 1000) : null)} /></label></div>
         </section><section className="composer-preview"><p>/ LIVE PREVIEW</p><h1>{draft.title || '尚未填写标题'}</h1>{draft.subtitle && <div className="preview-meta">{draft.subtitle}</div>}<div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{draft.body || '正文内容会实时显示在这里。'}</ReactMarkdown></div>{images.length > 0 && <div className="preview-images">{images.map((image) => <img key={image.key} src={image.preview} alt="" />)}</div>}</section></div>
+        {editing && <section className="revision-history"><button className="revision-toggle" onClick={() => setHistoryOpen((value) => !value)}>历史版本 <span>{revisions.length}</span></button>{historyOpen && <div>{revisions.length ? revisions.map((revision) => <article key={revision.id}><div><strong>{revision.title}</strong><time>{new Date(revision.created_at * 1000).toLocaleString('zh-CN')}</time></div><p>{revision.body.slice(0, 100) || '空正文'}</p><button disabled={submitting} onClick={() => restoreRevision(revision)}>恢复此版本</button></article>) : <p className="revision-empty">保存修改后，这里会自动保留历史版本。</p>}</div>}</section>}
         {editing && draft.channel_id === 'journal' && <ProcessNotesEditor parentId={contentId} initialNotes={notes} />}
         {!editing && draft.channel_id === 'journal' && <div className="process-note-hint"><strong>过程说明将在保存后添加</strong><span>先建立正文，随后会自动进入说明编辑。</span></div>}
         <footer className="composer-actions"><a href="/admin.html">取消</a><button disabled={submitting} onClick={() => save('draft')}>保存草稿</button><button disabled={submitting || !draft.publish_at} onClick={() => save('draft', true)}>定时发布</button><button disabled={submitting} onClick={() => save('published')} className="publish">{submitting ? '处理中…' : '保存并发布'}</button></footer>

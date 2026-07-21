@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import App from '../App'
 import CategoryManager from '../components/CategoryManager'
-import { deleteContent, listContents, listTaxonomy, updateContent, type Channel, type ContentType, type UnifiedContent } from '../api'
+import { deleteContent, deleteContentPermanently, listContents, listTaxonomy, restoreContent, updateContent, type Channel, type ContentType, type UnifiedContent } from '../api'
 import { ensureLoggedIn, isAdmin } from '../auth'
 
 const keyOf = (item: UnifiedContent) => String(item.id)
@@ -14,7 +14,7 @@ export default function AdminDashboard() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
   const [channel, setChannel] = useState<'all' | 'journal' | 'life'>(initialType === 'work' || initialType === 'study' ? 'journal' : initialType ? 'life' : 'all')
-  const [status, setStatus] = useState<'all' | 'draft' | 'scheduled' | 'published' | 'featured'>('all')
+  const [status, setStatus] = useState<'all' | 'draft' | 'scheduled' | 'published' | 'featured' | 'trash'>('all')
   const [channels, setChannels] = useState<Channel[]>([])
   const [category, setCategory] = useState('all')
   const [moveTo, setMoveTo] = useState('')
@@ -25,16 +25,16 @@ export default function AdminDashboard() {
       ? { href: '/life.html', label: '返回生活分享' }
       : { href: '/', label: '返回主页' }
 
-  async function load() { setLoading(true); try { const [content, taxonomy] = await Promise.all([listContents(), listTaxonomy()]); setItems(content.contents); setChannels(taxonomy.channels) } finally { setLoading(false) } }
+  async function load() { setLoading(true); try { const [content, taxonomy] = await Promise.all([listContents(undefined, true), listTaxonomy()]); setItems(content.contents); setChannels(taxonomy.channels) } finally { setLoading(false) } }
   useEffect(() => { if (!ensureLoggedIn()) return; if (!isAdmin()) { window.location.replace('/'); return }; load().catch((reason) => alert(reason.message || '读取内容失败')) }, [])
 
   const filtered = useMemo(() => items.filter((item) => {
     const q = query.trim().toLowerCase()
     const categoryMatch = category === 'all' || (category === 'none' ? item.category_id == null : item.category_id === Number(category))
-    const statusMatch = status === 'all' || (status === 'featured' ? Boolean(item.featured) : status === 'scheduled' ? Boolean(item.publish_at) : item.status === status && !item.publish_at)
+    const statusMatch = status === 'trash' ? Boolean(item.deleted_at) : !item.deleted_at && (status === 'all' || (status === 'featured' ? Boolean(item.featured) : status === 'scheduled' ? Boolean(item.publish_at) : item.status === status && !item.publish_at))
     return (!q || item.title.toLowerCase().includes(q)) && (channel === 'all' || item.channel_id === channel) && categoryMatch && statusMatch
   }), [items, query, channel, category, status])
-  const counts = useMemo(() => ({ total: items.length, published: items.filter((item) => item.status === 'published').length, draft: items.filter((item) => item.status === 'draft' && !item.publish_at).length, scheduled: items.filter((item) => item.publish_at).length, featured: items.filter((item) => item.featured).length }), [items])
+  const counts = useMemo(() => { const active = items.filter((item) => !item.deleted_at); return ({ total: active.length, published: active.filter((item) => item.status === 'published').length, draft: active.filter((item) => item.status === 'draft' && !item.publish_at).length, scheduled: active.filter((item) => item.publish_at).length, featured: active.filter((item) => item.featured).length, trash: items.filter((item) => item.deleted_at).length }) }, [items])
   const selectedItems = items.filter((item) => selected.has(keyOf(item)))
 
   async function patch(item: UnifiedContent, change: Partial<Pick<UnifiedContent, 'status' | 'featured' | 'pinned' | 'category_id' | 'publish_at'>>) {
@@ -43,10 +43,12 @@ export default function AdminDashboard() {
     catch (reason: any) { alert(reason.message || '保存失败') } finally { setSaving('') }
   }
   async function remove(item: UnifiedContent, ask = true) {
-    if (ask && !confirm(`确认永久删除“${item.title}”？`)) return false
+    if (ask && !confirm(`将“${item.title}”移入回收站？之后仍可恢复。`)) return false
     await deleteContent(item.id)
     setItems((current) => current.filter((entry) => keyOf(entry) !== keyOf(item))); setSelected((current) => { const next = new Set(current); next.delete(keyOf(item)); return next }); return true
   }
+  async function restore(item: UnifiedContent) { setSaving(keyOf(item)); try { await restoreContent(item.id); await load() } catch (reason: any) { alert(reason.message || '恢复失败') } finally { setSaving('') } }
+  async function purge(item: UnifiedContent) { if (!confirm(`彻底删除“${item.title}”？此操作不可撤销。`)) return; setSaving(keyOf(item)); try { await deleteContentPermanently(item.id); await load() } catch (reason: any) { alert(reason.message || '彻底删除失败') } finally { setSaving('') } }
   async function batchStatus(nextStatus: 'draft' | 'published') {
     if (!selectedItems.length) return
     setSaving('batch')
@@ -79,7 +81,7 @@ export default function AdminDashboard() {
   return <App current="admin"><div className="admin-dashboard">
     <a className="dashboard-back" href={returnTarget.href}>← {returnTarget.label}</a>
     <section className="dashboard-hero"><div><p>/ CONTENT STUDIO</p><h1>内容控制台<span>。</span></h1><p className="dashboard-lead">公开页面只负责阅读，创作、编辑、状态与删除全部在这里完成。</p></div><div className="dashboard-total"><strong>{loading ? '—' : counts.total}</strong><span>全部内容</span></div></section>
-    <section className="content-stats"><button onClick={() => setStatus('all')} className={status === 'all' ? 'active' : ''}><strong>{counts.total}</strong><span>全部</span></button><button onClick={() => setStatus('published')} className={status === 'published' ? 'active' : ''}><strong>{counts.published}</strong><span>已发布</span></button><button onClick={() => setStatus('draft')} className={status === 'draft' ? 'active' : ''}><strong>{counts.draft}</strong><span>草稿</span></button><button onClick={() => setStatus('scheduled')} className={status === 'scheduled' ? 'active' : ''}><strong>{counts.scheduled}</strong><span>定时</span></button><button onClick={() => setStatus('featured')} className={status === 'featured' ? 'active' : ''}><strong>{counts.featured}</strong><span>精选</span></button></section>
+    <section className="content-stats"><button onClick={() => setStatus('all')} className={status === 'all' ? 'active' : ''}><strong>{counts.total}</strong><span>全部</span></button><button onClick={() => setStatus('published')} className={status === 'published' ? 'active' : ''}><strong>{counts.published}</strong><span>已发布</span></button><button onClick={() => setStatus('draft')} className={status === 'draft' ? 'active' : ''}><strong>{counts.draft}</strong><span>草稿</span></button><button onClick={() => setStatus('scheduled')} className={status === 'scheduled' ? 'active' : ''}><strong>{counts.scheduled}</strong><span>定时</span></button><button onClick={() => setStatus('featured')} className={status === 'featured' ? 'active' : ''}><strong>{counts.featured}</strong><span>精选</span></button><button onClick={() => setStatus('trash')} className={status === 'trash' ? 'active' : ''}><strong>{counts.trash}</strong><span>回收站</span></button></section>
     <CategoryManager channels={channels} reload={load} />
     <section className="content-manager">
       <div className="content-toolbar"><label><span>搜索</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入标题…" /></label><label><span>频道</span><select value={channel} onChange={(event) => setChannel(event.target.value as typeof channel)}><option value="all">全部频道</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label><span>分类</span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">全部分类</option><option value="none">其他（未分类）</option>{channels.map((channel) => <optgroup key={channel.id} label={channel.name}>{channel.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</optgroup>)}</select></label><a href="/compose.html" className="content-new">＋ 新建内容</a></div>
@@ -87,8 +89,8 @@ export default function AdminDashboard() {
       <div className="content-table">{loading ? <p className="content-empty">正在读取内容…</p> : filtered.length === 0 ? <p className="content-empty">没有符合条件的内容</p> : filtered.map((item) => { const key=keyOf(item), busy=saving===key; return <article key={key} className={item.status === 'draft' ? 'is-draft' : ''}>
         <input className="content-check" type="checkbox" checked={selected.has(key)} onChange={() => toggle(key)} aria-label={`选择 ${item.title}`} />
         <div className="content-main"><span className="content-kind">{item.category_name || '其他'}</span><div><h2>{item.title}</h2><p>{item.channel_name} · {item.date} · #{String(item.id).padStart(3,'0')}</p></div></div>
-        <div className="content-flags"><button disabled={busy} onClick={() => patch(item,{status:item.status==='published'?'draft':'published',publish_at:null,...(item.status==='published'?{featured:0,pinned:0}:{})})} className={item.status==='published'?'on':''}>{item.publish_at ? `定时 ${new Date(item.publish_at * 1000).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}` : item.status==='published'?'已发布':'草稿'}</button><button disabled={busy||item.status==='draft'} onClick={() => patch(item,{featured:item.featured?0:1})} className={item.featured?'on featured':''}>精选</button><button disabled={busy||item.status==='draft'} onClick={() => patch(item,{pinned:item.pinned?0:1})} className={item.pinned?'on':''}>置顶</button></div>
-        <div className="content-links"><a href={`/compose.html?id=${item.id}`}>编辑</a>{item.status==='published'&&<a href={`/${item.channel_id}.html?id=${item.id}`}>查看 ↗</a>}<button onClick={() => remove(item)} className="delete-link">删除</button></div>
+        <div className="content-flags">{item.deleted_at ? <span className="trash-date">删除于 {new Date(item.deleted_at * 1000).toLocaleDateString('zh-CN')}</span> : <><button disabled={busy} onClick={() => patch(item,{status:item.status==='published'?'draft':'published',publish_at:null,...(item.status==='published'?{featured:0,pinned:0}:{})})} className={item.status==='published'?'on':''}>{item.publish_at ? `定时 ${new Date(item.publish_at * 1000).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}` : item.status==='published'?'已发布':'草稿'}</button><button disabled={busy||item.status==='draft'} onClick={() => patch(item,{featured:item.featured?0:1})} className={item.featured?'on featured':''}>精选</button><button disabled={busy||item.status==='draft'} onClick={() => patch(item,{pinned:item.pinned?0:1})} className={item.pinned?'on':''}>置顶</button></>}</div>
+        <div className="content-links">{item.deleted_at ? <><button onClick={() => restore(item)}>恢复</button><button onClick={() => purge(item)} className="delete-link">彻底删除</button></> : <><a href={`/compose.html?id=${item.id}`}>编辑</a>{item.status==='published'&&<a href={`/${item.channel_id}.html?id=${item.id}`}>查看 ↗</a>}<button onClick={() => remove(item)} className="delete-link">移入回收站</button></>}</div>
       </article>})}</div>
     </section>
   </div></App>
