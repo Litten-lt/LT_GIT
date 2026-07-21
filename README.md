@@ -43,6 +43,6 @@ npm run verify
 
 也可以在仓库根目录分别运行 `npm run dev:web`、`npm run dev:api`、`npm run build` 和 `npm run test`。
 
-生产部署说明见 [docs/deployment.md](docs/deployment.md)。
+完整生产部署、日常更新、回滚、备份恢复与更换服务器说明见 [docs/deployment.md](docs/deployment.md)。
 
 内容频道、可配置分类和未分类兜底规则见 [docs/taxonomy.md](docs/taxonomy.md)。
