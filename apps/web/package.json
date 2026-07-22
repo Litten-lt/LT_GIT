@@ -1,9 +1,9 @@
 {
-  "name": "chesshub-site",
+  "name": "longteng-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Personal landing page for chesshub.fun",
+  "description": "LongTeng personal website and content studio",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

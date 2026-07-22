@@ -1,8 +1,8 @@
 {
-  "name": "chesshub-server",
+  "name": "longteng-api",
   "version": "0.1.0",
   "private": true,
-  "description": "ChessHub 后端 - 登录 + 手办收藏 API",
+  "description": "LongTeng 个人网站内容管理 API",
   "type": "module",
   "scripts": {
     "start": "node server.js",

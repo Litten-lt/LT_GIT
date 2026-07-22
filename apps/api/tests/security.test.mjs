@@ -1,4 +1,4 @@
-// ChessHub P0 安全测试
+// LongTeng API 安全测试
 // 用法: node --test tests/security.test.mjs
 // 依赖: Node 20+ (内置 test runner + fetch)
 //
@@ -129,18 +129,18 @@ describe('① CORS 白名单', () => {
     server = spawnServer({
       DATA_DIR: dataDir,
       UPLOAD_DIR: uploadDir,
-      CORS_ORIGIN: 'https://chesshub.fun,http://localhost:5173',
+      CORS_ORIGIN: 'https://site.example,http://localhost:5173',
     }, PORT, logs)
     await waitForServer(PORT)
   })
   after(async () => { await killServer(server) })
 
-  test('A.1 允许的 origin (https://chesshub.fun) 拿到 ACAO 头', async () => {
+  test('A.1 允许的 origin (https://site.example) 拿到 ACAO 头', async () => {
     const r = await req(PORT, '/api/health', {
-      headers: { Origin: 'https://chesshub.fun' },
+      headers: { Origin: 'https://site.example' },
     })
     assert.equal(r.status, 200)
-    assert.equal(r.headers.get('access-control-allow-origin'), 'https://chesshub.fun')
+    assert.equal(r.headers.get('access-control-allow-origin'), 'https://site.example')
   })
 
   test('A.2 允许的 origin (http://localhost:5173) 拿到 ACAO 头', async () => {
@@ -413,12 +413,12 @@ describe('③ Magic bytes 校验', () => {
 
 describe('④ 备份 cron', () => {
   test('D.1 备份脚本模板存在', async () => {
-    const scriptPath = path.join(__dirname, 'chesshub-backup.sh')
+    const scriptPath = path.join(__dirname, 'longteng-backup.sh')
     assert.ok(existsSync(scriptPath), `${scriptPath} not found`)
   })
 
   test('D.2 脚本关键命令齐全', async () => {
-    const script = await readFile(path.join(__dirname, 'chesshub-backup.sh'), 'utf8')
+    const script = await readFile(path.join(__dirname, 'longteng-backup.sh'), 'utf8')
     assert.ok(script.includes('tar -czf'), 'should use tar -czf')
     assert.ok(script.includes('data.tar.gz') || script.includes('data'), 'should backup data dir')
     assert.ok(script.includes('.env') || script.includes('env'), 'should include .env')
@@ -433,11 +433,11 @@ describe('④ 备份 cron', () => {
     if (process.platform === 'win32') {
       // 用 node 解析: 没有语法错误就能 readFile, 我们 D.1/D.2 已验过
       // 这里用 basic check: 脚本末尾有换行 + 不会让 bash 立即 crash
-      const script = await readFile(path.join(__dirname, 'chesshub-backup.sh'), 'utf8')
+      const script = await readFile(path.join(__dirname, 'longteng-backup.sh'), 'utf8')
       assert.ok(script.endsWith('\n'), 'should end with newline')
       return
     }
-    const scriptPath = path.join(__dirname, 'chesshub-backup.sh')
+    const scriptPath = path.join(__dirname, 'longteng-backup.sh')
     const { execFileSync } = await import('node:child_process')
     execFileSync('bash', ['-n', scriptPath], { stdio: 'pipe' })
   })
@@ -879,7 +879,7 @@ describe('I. 老 schema → 新 schema 数据迁移', () => {
     await mkdir(uploadDir, { recursive: true })
 
     // 1. 先清空 DB (避免重跑时老 schema 残留), 手动建一个老 schema 的 works 表 + 1 条记录
-    const dbPath = path.join(dataDir, 'chesshub.db')
+    const dbPath = path.join(dataDir, 'longteng.db')
     try { await unlink(dbPath) } catch { /* ignore */ }
     const mod = await import('better-sqlite3')
     const Database = mod.default || mod

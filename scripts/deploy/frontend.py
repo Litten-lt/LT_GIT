@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Deploy new chesshub frontend to /var/www/chesshub/ on 159.75.97.172."""
+"""Deploy the LongTeng frontend to the configured production server."""
 import os, sys, time, paramiko, hashlib
 from pathlib import Path
 
 sys.stdout.reconfigure(errors="replace")
 
-HOST = "159.75.97.172"
+HOST = os.environ.get("LT_DEPLOY_HOST", "159.75.97.172")
 PORT = 22
-USER = "ubuntu"
+USER = os.environ.get("LT_DEPLOY_USER", "ubuntu")
 PASS = os.environ.get("SSH_PASS")
 
 ROOT = Path(__file__).resolve().parents[2]
-LOCAL_TAR = ROOT / "artifacts" / "chesshub-dist.tar.gz"
-REMOTE_TAR = "/tmp/chesshub-dist.tar.gz"
-REMOTE_WEB = "/var/www/chesshub"
+LOCAL_TAR = ROOT / "artifacts" / "longteng-web.tar.gz"
+REMOTE_TAR = "/tmp/longteng-web.tar.gz"
+REMOTE_WEB = os.environ.get("LT_REMOTE_WEB", "/var/www/longteng")
 
 # Local hash for sanity
 with LOCAL_TAR.open("rb") as f:
@@ -37,11 +37,11 @@ def run(cmd, timeout=60, sudo=False, label=None):
     if err: print(f"[stderr rc={rc}] {err.rstrip()}")
     return out, err, rc
 
-# 1. Backup current /var/www/chesshub
+# 1. Backup current web root
 print("\n########## Step 1: backup current webroot ##########")
 run(
-    f"tar -czf /tmp/chesshub-web-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C {REMOTE_WEB} . 2>/dev/null && "
-    f"ls -la /tmp/chesshub-web-backup-*.tar.gz | tail -3",
+    f"tar -czf /tmp/longteng-web-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C {REMOTE_WEB} . 2>/dev/null && "
+    f"ls -la /tmp/longteng-web-backup-*.tar.gz | tail -3",
     sudo=True, label="backup webroot", timeout=60
 )
 

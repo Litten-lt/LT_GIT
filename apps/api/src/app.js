@@ -1,4 +1,4 @@
-// ChessHub 后端服务
+// LongTeng 个人网站后端服务
 // 启动: node server.js
 // 依赖: express, better-sqlite3, multer, cors, jsonwebtoken, dotenv
 
@@ -40,7 +40,13 @@ const logger = createLogger(config)
 fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 fs.mkdirSync(DATA_DIR, { recursive: true })
 
-const db = new Database(path.join(DATA_DIR, 'chesshub.db'))
+const databasePath = path.join(DATA_DIR, 'longteng.db')
+const legacyDatabasePath = path.join(DATA_DIR, 'chesshub.db')
+if (!fs.existsSync(databasePath) && fs.existsSync(legacyDatabasePath)) {
+  fs.renameSync(legacyDatabasePath, databasePath)
+  logger.info('[migration] database renamed: chesshub.db -> longteng.db')
+}
+const db = new Database(databasePath)
 db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 
@@ -1848,7 +1854,7 @@ app.get('/api/admin/usage', requireAuth, (req, res) => {
 
     // DB
     try {
-      const dbPath = path.join(DATA_DIR, 'chesshub.db')
+      const dbPath = databasePath
       const dbStat = fs.statSync(dbPath)
       const walPath = dbPath + '-wal'
       const walStat = fs.existsSync(walPath) ? fs.statSync(walPath) : { size: 0 }
@@ -1951,9 +1957,9 @@ function seedIfEmpty() {
   const count = db.prepare('SELECT COUNT(*) AS n FROM figures').get().n
   if (count > 0) return
 
-  // 候选源:从 /var/www/chesshub/figures/ 读(dist 自带的示例图)
+  // 候选源:从前端发布目录读取 dist 自带的示例图
   const sources = [
-    '/var/www/chesshub/figures/aobing.jpg',
+    '/var/www/longteng/figures/aobing.jpg',
     path.join(UPLOAD_DIR, 'aobing.jpg'),
   ]
   const src = sources.find((p) => fs.existsSync(p))
@@ -1993,10 +1999,10 @@ function seedIfEmpty() {
 
 export function startServer() {
   return app.listen(PORT, '127.0.0.1', () => {
-    logger.info({ port: PORT, env: NODE_ENV }, `[chesshub-server] listening on http://127.0.0.1:${PORT}`)
-    logger.info({ user: ADMIN_USER }, '[chesshub-server] admin configured')
-    logger.info({ dir: UPLOAD_DIR }, '[chesshub-server] upload dir')
-    logger.info({ dir: DATA_DIR }, '[chesshub-server] data dir')
+    logger.info({ port: PORT, env: NODE_ENV }, `[longteng-api] listening on http://127.0.0.1:${PORT}`)
+    logger.info({ user: ADMIN_USER }, '[longteng-api] admin configured')
+    logger.info({ dir: UPLOAD_DIR }, '[longteng-api] upload dir')
+    logger.info({ dir: DATA_DIR }, '[longteng-api] data dir')
     seedIfEmpty()
     seedTravelIfEmpty()
     seedNoteIfEmpty()

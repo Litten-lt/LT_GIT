@@ -8,21 +8,21 @@
 
 ```text
 浏览器
-  ├─ /、/*.html、/assets/* ── Nginx ── /var/www/chesshub
-  ├─ /data/figures/*       ── Nginx ── /var/www/chesshub-data/figures
+  ├─ /、/*.html、/assets/* ── Nginx ── /var/www/longteng
+  ├─ /data/figures/*       ── Nginx ── /var/www/longteng-data/figures
   └─ /api/*                ── Nginx ── 127.0.0.1:3000
-                                      └─ /opt/chesshub-server
+                                      └─ /opt/longteng-api
                                          ├─ server.js / src/
                                          ├─ node_modules/
                                          ├─ .env
-                                         └─ data/chesshub.db
+                                         └─ data/longteng.db
 ```
 
 需要长期保存、迁移和备份的生产数据只有三类：
 
-1. `/opt/chesshub-server/data/`：SQLite 数据库。
-2. `/var/www/chesshub-data/figures/`：上传图片。
-3. `/opt/chesshub-server/.env`：生产环境配置和密钥。
+1. `/opt/longteng-api/data/`：SQLite 数据库。
+2. `/var/www/longteng-data/figures/`：上传图片。
+3. `/opt/longteng-api/.env`：生产环境配置和密钥。
 
 前端目录和后端源码都可以由 Git 仓库重新构建，不能代替以上三类数据的备份。
 
@@ -43,13 +43,13 @@ npm run verify
 ### 2.1 前端单独编译
 
 ```powershell
-npm run build --workspace chesshub-site
+npm run build --workspace longteng-web
 ```
 
 产物位于 `apps/web/dist/`。本地预览：
 
 ```powershell
-npm run preview --workspace chesshub-site
+npm run preview --workspace longteng-web
 ```
 
 前端是静态文件，不需要在生产服务器运行 Vite。
@@ -59,8 +59,8 @@ npm run preview --workspace chesshub-site
 后端目前是原生 JavaScript，不需要转译编译；生产前需要检查语法和运行测试：
 
 ```powershell
-npm run check --workspace chesshub-server
-npm run test --workspace chesshub-server
+npm run check --workspace longteng-api
+npm run test --workspace longteng-api
 ```
 
 如 `package.json` 或 lockfile 有变化，生产服务器必须重新运行 `npm ci --omit=dev`。
@@ -83,15 +83,15 @@ $env:SSH_PASS='临时密码'
 ### 3.1 只部署前端
 
 ```powershell
-npm run build --workspace chesshub-site
+npm run build --workspace longteng-web
 New-Item -ItemType Directory -Force artifacts
-tar -czf artifacts/chesshub-dist.tar.gz -C apps/web/dist .
+tar -czf artifacts/longteng-web.tar.gz -C apps/web/dist .
 python scripts/deploy/frontend.py
 ```
 
 脚本会：
 
-1. 备份当前 `/var/www/chesshub` 到服务器 `/tmp/`；
+1. 备份当前 `/var/www/longteng` 到服务器 `/tmp/`；
 2. 上传前端压缩包；
 3. 替换 HTML、assets 和构建产物；
 4. 检查 Nginx 状态与监听端口。
@@ -109,7 +109,7 @@ python scripts/deploy/backend.py
 1. 备份服务器上的后端源码和数据库到 `/tmp/`；
 2. 上传 `server.js` 与 `src/`；
 3. 执行 Node.js 语法检查；
-4. 重启 `chesshub-server` PM2 进程；
+4. 重启 `longteng-api` PM2 进程；
 5. 请求 `/api/health` 验证服务。
 
 注意：这个快捷脚本不会上传 `package.json`、lockfile 或重新安装依赖。依赖变化时应采用“完整后端部署”。
@@ -119,7 +119,7 @@ python scripts/deploy/backend.py
 ```powershell
 npm run verify
 python scripts/deploy/backend.py
-tar -czf artifacts/chesshub-dist.tar.gz -C apps/web/dist .
+tar -czf artifacts/longteng-web.tar.gz -C apps/web/dist .
 python scripts/deploy/frontend.py
 ```
 
@@ -154,10 +154,10 @@ Node.js 版本应为 20 或更高。如 Ubuntu 仓库提供的版本过旧，应
 ### 4.2 创建目录
 
 ```bash
-sudo mkdir -p /var/www/chesshub
-sudo mkdir -p /var/www/chesshub-data/figures
-sudo mkdir -p /opt/chesshub-server/data
-sudo chown -R ubuntu:ubuntu /var/www/chesshub /var/www/chesshub-data /opt/chesshub-server
+sudo mkdir -p /var/www/longteng
+sudo mkdir -p /var/www/longteng-data/figures
+sudo mkdir -p /opt/longteng-api/data
+sudo chown -R ubuntu:ubuntu /var/www/longteng /var/www/longteng-data /opt/longteng-api
 ```
 
 ### 4.3 上传并安装后端
@@ -165,15 +165,15 @@ sudo chown -R ubuntu:ubuntu /var/www/chesshub /var/www/chesshub-data /opt/chessh
 在本地制作完整后端包：
 
 ```powershell
-tar -czf artifacts/chesshub-server.tar.gz -C apps/api server.js src package.json package-lock.json .env.example
-scp artifacts/chesshub-server.tar.gz ubuntu@服务器IP:/tmp/
+tar -czf artifacts/longteng-api.tar.gz -C apps/api server.js src package.json package-lock.json .env.example
+scp artifacts/longteng-api.tar.gz ubuntu@服务器IP:/tmp/
 ```
 
 服务器执行：
 
 ```bash
-tar -xzf /tmp/chesshub-server.tar.gz -C /opt/chesshub-server
-cd /opt/chesshub-server
+tar -xzf /tmp/longteng-api.tar.gz -C /opt/longteng-api
+cd /opt/longteng-api
 npm ci --omit=dev
 cp .env.example .env
 chmod 600 .env
@@ -186,7 +186,7 @@ ADMIN_USER=你的管理员账号
 ADMIN_PASS=高强度独立密码
 JWT_SECRET=至少32字节的随机字符串
 PORT=3000
-UPLOAD_DIR=/var/www/chesshub-data/figures
+UPLOAD_DIR=/var/www/longteng-data/figures
 CORS_ORIGIN=https://你的域名
 PUBLIC_BASE_URL=
 ```
@@ -200,8 +200,8 @@ openssl rand -hex 32
 启动服务：
 
 ```bash
-cd /opt/chesshub-server
-pm2 start server.js --name chesshub-server
+cd /opt/longteng-api
+pm2 start server.js --name longteng-api
 pm2 save
 pm2 startup
 ```
@@ -213,21 +213,21 @@ pm2 startup
 本地执行：
 
 ```powershell
-npm run build --workspace chesshub-site
-tar -czf artifacts/chesshub-dist.tar.gz -C apps/web/dist .
-scp artifacts/chesshub-dist.tar.gz ubuntu@服务器IP:/tmp/
+npm run build --workspace longteng-web
+tar -czf artifacts/longteng-web.tar.gz -C apps/web/dist .
+scp artifacts/longteng-web.tar.gz ubuntu@服务器IP:/tmp/
 ```
 
 服务器执行：
 
 ```bash
-sudo tar -xzf /tmp/chesshub-dist.tar.gz -C /var/www/chesshub
-sudo chown -R www-data:www-data /var/www/chesshub
+sudo tar -xzf /tmp/longteng-web.tar.gz -C /var/www/longteng
+sudo chown -R www-data:www-data /var/www/longteng
 ```
 
 ### 4.5 配置 Nginx
 
-创建 `/etc/nginx/sites-available/chesshub`：
+创建 `/etc/nginx/sites-available/longteng`：
 
 ```nginx
 server {
@@ -235,7 +235,7 @@ server {
     listen [::]:80;
     server_name example.com www.example.com;
 
-    root /var/www/chesshub;
+    root /var/www/longteng;
     index index.html;
 
     location / {
@@ -252,7 +252,7 @@ server {
     }
 
     location /data/figures/ {
-        alias /var/www/chesshub-data/figures/;
+        alias /var/www/longteng-data/figures/;
         expires 30d;
         add_header Cache-Control "public, immutable";
     }
@@ -262,7 +262,7 @@ server {
 启用并检查：
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/chesshub /etc/nginx/sites-enabled/chesshub
+sudo ln -s /etc/nginx/sites-available/longteng /etc/nginx/sites-enabled/longteng
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -278,14 +278,14 @@ sudo systemctl reload nginx
 先短暂停止写入。最稳妥的方式是暂停后端，避免复制 SQLite 时仍有写操作：
 
 ```bash
-sudo pm2 stop chesshub-server
+sudo pm2 stop longteng-api
 STAMP=$(date +%Y%m%d-%H%M%S)
-sudo tar -czf /tmp/chesshub-migration-$STAMP.tar.gz \
-  /opt/chesshub-server/data \
-  /opt/chesshub-server/.env \
-  /var/www/chesshub-data/figures
-sudo pm2 start chesshub-server
-sudo sha256sum /tmp/chesshub-migration-$STAMP.tar.gz
+sudo tar -czf /tmp/longteng-migration-$STAMP.tar.gz \
+  /opt/longteng-api/data \
+  /opt/longteng-api/.env \
+  /var/www/longteng-data/figures
+sudo pm2 start longteng-api
+sudo sha256sum /tmp/longteng-migration-$STAMP.tar.gz
 ```
 
 将压缩包下载到受保护的本地目录。该文件包含管理员密码与 JWT 密钥，不能上传 GitHub、网盘公开链接或聊天工具。
@@ -295,15 +295,15 @@ sudo sha256sum /tmp/chesshub-migration-$STAMP.tar.gz
 先完成第 4 节的基础环境、源码、依赖和目录部署，再上传迁移包：
 
 ```bash
-sudo tar -xzf /tmp/chesshub-migration-时间戳.tar.gz -C /
-sudo chown -R ubuntu:ubuntu /opt/chesshub-server
-sudo chown -R www-data:www-data /var/www/chesshub-data
-cd /opt/chesshub-server
+sudo tar -xzf /tmp/longteng-migration-时间戳.tar.gz -C /
+sudo chown -R ubuntu:ubuntu /opt/longteng-api
+sudo chown -R www-data:www-data /var/www/longteng-data
+cd /opt/longteng-api
 npm ci --omit=dev
-pm2 restart chesshub-server
+pm2 restart longteng-api
 ```
 
-应用启动时会自动执行兼容性数据库迁移。不要手工删除或重建 `chesshub.db`。
+应用启动时会自动执行兼容性数据库迁移。旧 `chesshub.db` 会自动改名为 `longteng.db`，不要手工删除或重建数据库。
 
 ### 5.3 切换前验证
 
@@ -329,7 +329,7 @@ curl -I http://新服务器IP/
 
 - `scripts/deploy/backend.py` 的 `HOST`、`USER` 和远端目录；
 - `scripts/deploy/frontend.py` 的 `HOST`、`USER` 和远端目录；
-- `apps/api/chesshub-deploy.sh` 中的 IP、域名和目录；
+- `scripts/deploy/*.py` 使用的 `LT_DEPLOY_HOST`、`LT_DEPLOY_USER` 与远端目录变量；
 - `apps/web/public/robots.txt` 与 `sitemap.xml` 中的正式站点地址；
 - 云安全组、防火墙、DNS、HTTPS 和备份任务。
 
@@ -337,14 +337,14 @@ curl -I http://新服务器IP/
 
 ## 6. 自动备份与恢复演练
 
-仓库提供 `apps/api/tests/chesshub-backup.sh` 模板，可安装到 `/etc/cron.daily/chesshub-backup.sh`。默认备份：数据库、`.env` 和上传图片，并保留 7 天。
+仓库提供 `apps/api/tests/longteng-backup.sh` 模板，可安装为 `/etc/cron.daily/longteng-backup.sh`。默认备份：数据库、`.env` 和上传图片，并保留 7 天。
 
 备份完成不等于可恢复。至少每月执行一次恢复演练：
 
 ```bash
-mkdir -p /tmp/chesshub-restore-test
-tar -xzf /var/backups/chesshub/某次备份/data.tar.gz -C /tmp/chesshub-restore-test
-tar -tzf /var/backups/chesshub/某次备份/uploads.tar.gz >/dev/null
+mkdir -p /tmp/longteng-restore-test
+tar -xzf /var/backups/longteng/某次备份/data.tar.gz -C /tmp/longteng-restore-test
+tar -tzf /var/backups/longteng/某次备份/uploads.tar.gz >/dev/null
 ```
 
 备份最好再同步一份到另一台机器或私有对象存储；只保存在同一块服务器磁盘上无法应对磁盘损坏或主机丢失。
@@ -353,21 +353,21 @@ tar -tzf /var/backups/chesshub/某次备份/uploads.tar.gz >/dev/null
 
 ### 前端回滚
 
-部署脚本会在 `/tmp/chesshub-web-backup-时间戳.tar.gz` 保留部署前版本：
+部署脚本会在 `/tmp/longteng-web-backup-时间戳.tar.gz` 保留部署前版本：
 
 ```bash
-sudo rm -rf /var/www/chesshub/assets /var/www/chesshub/*.html
-sudo tar -xzf /tmp/chesshub-web-backup-时间戳.tar.gz -C /var/www/chesshub
+sudo rm -rf /var/www/longteng/assets /var/www/longteng/*.html
+sudo tar -xzf /tmp/longteng-web-backup-时间戳.tar.gz -C /var/www/longteng
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
 ### 后端回滚
 
 ```bash
-sudo tar -xzf /tmp/chesshub-api-backup-时间戳.tar.gz -C /opt/chesshub-server
-sudo cp /tmp/chesshub-db-backup-时间戳.db /opt/chesshub-server/data/chesshub.db
-cd /opt/chesshub-server
-sudo pm2 restart chesshub-server
+sudo tar -xzf /tmp/longteng-api-backup-时间戳.tar.gz -C /opt/longteng-api
+sudo cp /tmp/longteng-db-backup-时间戳.db /opt/longteng-api/data/longteng.db
+cd /opt/longteng-api
+sudo pm2 restart longteng-api
 curl -fsS http://127.0.0.1:3000/api/health
 ```
 
@@ -379,7 +379,7 @@ curl -fsS http://127.0.0.1:3000/api/health
 
 ```bash
 curl -v http://127.0.0.1:3000/api/health
-sudo pm2 logs chesshub-server --lines 100
+sudo pm2 logs longteng-api --lines 100
 sudo nginx -t
 ```
 
@@ -390,8 +390,8 @@ sudo nginx -t
 检查 `UPLOAD_DIR`、Nginx alias 和文件权限：
 
 ```bash
-grep UPLOAD_DIR /opt/chesshub-server/.env
-ls -la /var/www/chesshub-data/figures | head
+grep UPLOAD_DIR /opt/longteng-api/.env
+ls -la /var/www/longteng-data/figures | head
 sudo nginx -T | grep -A5 'location /data/figures/'
 ```
 

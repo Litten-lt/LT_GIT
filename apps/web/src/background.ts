@@ -1,11 +1,12 @@
 // Hero 背景设置读写
-// - 后端存 settings 表,前端 localStorage 缓存 (chesshub.heroBg)
+// - 后端存 settings 表，前端使用 longteng.heroBg 并兼容旧缓存键
 // - 类型: 'color' | 'gradient' | 'image' | 'default'
 // - value: hex 颜色 / gradient css / 图片文件名
 
 import { getToken } from './auth'
 
-const CACHE_KEY = 'chesshub.heroBg'
+const CACHE_KEY = 'longteng.heroBg'
+const LEGACY_CACHE_KEY = 'chesshub.heroBg'
 
 export type HeroBg =
   | { type: 'color'; value: string }
@@ -36,6 +37,10 @@ function authHeader(): Record<string, string> {
 
 // 从 localStorage 取缓存 (同步)
 export function getCachedHeroBg(): HeroBg {
+  if (!localStorage.getItem(CACHE_KEY) && localStorage.getItem(LEGACY_CACHE_KEY)) {
+    localStorage.setItem(CACHE_KEY, localStorage.getItem(LEGACY_CACHE_KEY)!)
+    localStorage.removeItem(LEGACY_CACHE_KEY)
+  }
   try {
     const raw = localStorage.getItem(CACHE_KEY)
     if (raw) return JSON.parse(raw)

@@ -9,7 +9,7 @@ export const config = Object.freeze({
   adminUser: process.env.ADMIN_USER || 'admin',
   adminPass: process.env.ADMIN_PASS || 'admin',
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
-  uploadDir: process.env.UPLOAD_DIR || '/var/www/chesshub-data/figures',
+  uploadDir: process.env.UPLOAD_DIR || '/var/www/longteng-data/figures',
   dataDir: process.env.DATA_DIR || path.join(apiRoot, 'data'),
   corsOrigin: process.env.CORS_ORIGIN || '*',
   publicBaseUrl: process.env.PUBLIC_BASE_URL || '',

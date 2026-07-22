@@ -34,7 +34,8 @@ export default function UnifiedComposer() {
   const [revisions, setRevisions] = useState<ContentRevision[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const dirtyRef = useRef(false)
-  const storageKey = editing ? `chesshub:content-edit:${contentId}` : 'chesshub:composer-unified:v1'
+  const storageKey = editing ? `longteng:content-edit:${contentId}` : 'longteng:composer:v1'
+  const legacyStorageKey = editing ? `chesshub:content-edit:${contentId}` : 'chesshub:composer-unified:v1'
 
   useEffect(() => {
     if (!ensureLoggedIn()) return
@@ -51,13 +52,13 @@ export default function UnifiedComposer() {
         if (id) {
           const item = (await getContent(id)).content
           const serverDraft = { channel_id: item.channel_id, category_id: item.category_id, title: item.title, subtitle: item.subtitle || '', body: item.body, status: item.status, featured: item.featured, pinned: item.pinned, publish_at: item.publish_at || null }
-          const local = localStorage.getItem(`chesshub:content-edit:${id}`)
+          const local = localStorage.getItem(`longteng:content-edit:${id}`) || localStorage.getItem(`chesshub:content-edit:${id}`)
           const restored = local && confirm('发现这篇内容有未提交的本地修改，是否恢复？') ? { ...serverDraft, ...JSON.parse(local).draft } : serverDraft
           setDraft(restored)
           setImages(item.images.map((url) => ({ key: url, url, preview: url }))); setNotes(item.notes || [])
           setRevisions((await listContentRevisions(id)).revisions)
         } else {
-          const saved = localStorage.getItem('chesshub:composer-unified:v1')
+          const saved = localStorage.getItem('longteng:composer:v1') || localStorage.getItem('chesshub:composer-unified:v1')
           const local = saved ? JSON.parse(saved) : null
           const restored = local ? { ...emptyDraft, ...(local.draft || local) } : emptyDraft
           const first = taxonomy.channels.find((channel) => channel.id === restored.channel_id)?.categories[0]?.id ?? null
@@ -91,7 +92,7 @@ export default function UnifiedComposer() {
       let id = contentId
       if (editing) await updateContent(id, payload)
       else { id = (await createContent(payload)).id; setContentId(id); setEditing(true) }
-      dirtyRef.current = false; setDirty(false); localStorage.removeItem(storageKey); localStorage.removeItem('chesshub:composer-unified:v1')
+      dirtyRef.current = false; setDirty(false); localStorage.removeItem(storageKey); localStorage.removeItem(legacyStorageKey)
       window.location.href = draft.channel_id === 'journal' ? `/compose.html?id=${id}&saved=1` : `/admin.html?saved=${id}`
     } catch (reason: any) { alert(reason.message || '保存失败') } finally { setSubmitting(false) }
   }

@@ -11,7 +11,7 @@ const posts: Post[] = [
   {
     date: '2026.06',
     title: '搭建了个人主页',
-    excerpt: '把 chesshub.fun 重新设计成米色简约风。先放骨架,内容慢慢加。',
+    excerpt: '把个人网站重新设计成米色简约风。先放骨架，内容慢慢加。',
   },
 ]
 

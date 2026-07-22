@@ -100,7 +100,7 @@ test('draft is hidden from guests while admin can manage it', async () => {
 
   // 删除的是分类关系，不是内容；频道保留，分类变为 NULL，为下一阶段“其他”兜底做准备。
   const { default: Database } = await import('better-sqlite3')
-  const db = new Database(path.join(base, 'chesshub.db'))
+  const db = new Database(path.join(base, 'longteng.db'))
   db.pragma('foreign_keys = ON')
   db.prepare("DELETE FROM categories WHERE slug = 'work'").run()
   db.close()
