@@ -3,6 +3,7 @@ import App from '../App'
 import CategoryManager from '../components/CategoryManager'
 import { deleteContent, deleteContentPermanently, listContents, listTaxonomy, restoreContent, updateContent, type Channel, type ContentType, type UnifiedContent } from '../api'
 import { ensureLoggedIn, isAdmin } from '../auth'
+import { readingHref } from '../readingNavigation'
 
 const keyOf = (item: UnifiedContent) => String(item.id)
 
@@ -90,7 +91,7 @@ export default function AdminDashboard() {
         <input className="content-check" type="checkbox" checked={selected.has(key)} onChange={() => toggle(key)} aria-label={`选择 ${item.title}`} />
         <div className="content-main"><span className="content-kind">{item.category_name || '其他'}</span><div><h2>{item.title}</h2><p>{item.channel_name} · {item.date} · #{String(item.id).padStart(3,'0')}</p></div></div>
         <div className="content-flags">{item.deleted_at ? <span className="trash-date">删除于 {new Date(item.deleted_at * 1000).toLocaleDateString('zh-CN')}</span> : <><button disabled={busy} onClick={() => patch(item,{status:item.status==='published'?'draft':'published',publish_at:null,...(item.status==='published'?{featured:0,pinned:0}:{})})} className={item.status==='published'?'on':''}>{item.publish_at ? `定时 ${new Date(item.publish_at * 1000).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}` : item.status==='published'?'已发布':'草稿'}</button><button disabled={busy||item.status==='draft'} onClick={() => patch(item,{featured:item.featured?0:1})} className={item.featured?'on featured':''}>精选</button><button disabled={busy||item.status==='draft'} onClick={() => patch(item,{pinned:item.pinned?0:1})} className={item.pinned?'on':''}>置顶</button></>}</div>
-        <div className="content-links">{item.deleted_at ? <><button onClick={() => restore(item)}>恢复</button><button onClick={() => purge(item)} className="delete-link">彻底删除</button></> : <><a href={`/compose.html?id=${item.id}`}>编辑</a>{item.status==='published'&&<a href={`/${item.channel_id}.html?id=${item.id}`}>查看 ↗</a>}<button onClick={() => remove(item)} className="delete-link">移入回收站</button></>}</div>
+        <div className="content-links">{item.deleted_at ? <><button onClick={() => restore(item)}>恢复</button><button onClick={() => purge(item)} className="delete-link">彻底删除</button></> : <><a href={`/compose.html?id=${item.id}`}>编辑</a>{item.status==='published'&&<a href={readingHref(item.channel_id, item.id)}>查看 ↗</a>}<button onClick={() => remove(item)} className="delete-link">移入回收站</button></>}</div>
       </article>})}</div>
     </section>
   </div></App>

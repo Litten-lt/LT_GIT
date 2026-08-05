@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listContents, type UnifiedContent } from '../api'
+import { readingHref } from '../readingNavigation'
 
 type ProjectCard = {
   index: string
@@ -54,7 +55,7 @@ function cardsFromContent(contents: UnifiedContent[]): ProjectCard[] {
     title: item.title,
     description: cleanDescription(item.body),
     meta: item.note_count + ' 条过程记录 · ' + item.date,
-    href: '/journal.html?id=' + item.id,
+    href: readingHref('journal', item.id, '/'),
     tone: index === 0 ? 'project-warm' : index === 1 ? 'project-olive' : 'project-plum',
   }))
   return cards.length >= 2 ? cards : fallbackCards
@@ -115,4 +116,3 @@ export default function FeaturedProjects() {
     </section>
   )
 }
-

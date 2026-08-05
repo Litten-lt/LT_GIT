@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import App from '../App'
+import MarkdownToolbar from '../components/MarkdownToolbar'
 import ProcessNotesEditor from '../components/ProcessNotesEditor'
 import { createContent, filenameFromUrl, getContent, listContentRevisions, listContents, listTaxonomy, restoreContentRevision, updateContent, uploadImage, type Channel, type ContentRevision, type UnifiedNote } from '../api'
 import { ensureLoggedIn, isAdmin } from '../auth'
@@ -29,11 +30,11 @@ export default function UnifiedComposer() {
   const [loading, setLoading] = useState(true)
   const [savedAt, setSavedAt] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [mode, setMode] = useState<'edit' | 'preview'>('edit')
   const [dirty, setDirty] = useState(false)
   const [revisions, setRevisions] = useState<ContentRevision[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const dirtyRef = useRef(false)
+  const bodyRef = useRef<HTMLTextAreaElement>(null)
   const storageKey = editing ? `longteng:content-edit:${contentId}` : 'longteng:composer:v1'
   const legacyStorageKey = editing ? `chesshub:content-edit:${contentId}` : 'chesshub:composer-unified:v1'
 
@@ -107,12 +108,12 @@ export default function UnifiedComposer() {
   return <App current="admin"><div className="composer-shell">
     <header className="composer-heading"><div><p>{editing ? '/ EDIT CONTENT' : '/ NEW CONTENT'}</p><h1>{editing ? '编辑内容' : '统一创作台'}<span>。</span></h1></div><div className="composer-save-state"><span className="save-dot" />{savedAt ? `${savedAt} 已备份到本机` : dirty ? '有未保存修改' : '内容已同步'}</div></header>
     <div className="composer-layout"><aside className="composer-types"><p>发布方向</p>{directions.map((item) => <button key={item.id} disabled={editing} onClick={() => changeDirection(item.id)} className={draft.channel_id === item.id ? 'active' : ''}><strong>{item.label}</strong><span>{item.hint}</span></button>)}</aside>
-      <main className="composer-editor"><div className="composer-topbar"><div><span>{direction.label}</span><small>{editing ? `统一内容 #${contentId}` : direction.hint}</small></div><div className="composer-tabs"><button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>编辑</button><button className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}>预览</button></div></div>
-        <div className={`composer-pane ${mode === 'preview' ? 'show-preview' : ''}`}><section className="composer-fields">
+      <main className="composer-editor"><div className="composer-topbar"><div><span>{direction.label}</span><small>{editing ? `统一内容 #${contentId}` : direction.hint}</small></div><div className="composer-live-label"><span className="save-dot" />右侧实时预览</div></div>
+        <div className="composer-pane"><section className="composer-fields">
           <label><span>发布分类</span><select value={draft.category_id ?? ''} onChange={(event) => update('category_id', event.target.value ? Number(event.target.value) : null)}><option value="">其他（未分类）</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
           <label><span>标题 *</span><input value={draft.title} onChange={(event) => update('title', event.target.value)} /></label>
           {draft.channel_id === 'life' && <label><span>补充说明</span><input value={draft.subtitle} onChange={(event) => update('subtitle', event.target.value)} /></label>}
-          <label className="body-field"><span>正文 * <em>支持 Markdown</em></span><textarea value={draft.body} onChange={(event) => update('body', event.target.value)} /></label>
+          <label className="body-field"><span>正文 * <em>支持 Markdown，可用下方工具快速排版</em></span><MarkdownToolbar textareaRef={bodyRef} value={draft.body} onChange={(value) => update('body', value)} /><textarea ref={bodyRef} value={draft.body} onChange={(event) => update('body', event.target.value)} /></label>
           {draft.channel_id === 'life' && <><label className="composer-upload"><input type="file" accept="image/*" multiple onChange={(event) => pickFiles(Array.from(event.target.files || []))} /><strong>{images.length ? '继续添加图片' : '添加图片（可选）'}</strong><span>已选 {images.length} 张 · 可调整顺序</span></label>{images.length > 0 && <div className="composer-images">{images.map((image, index) => <div key={image.key}><img src={image.preview} alt="" /><button className="image-remove" onClick={() => removeImage(index)}>×</button><div className="image-order"><button disabled={index === 0} onClick={() => moveImage(index, -1)}>←</button><button disabled={index === images.length - 1} onClick={() => moveImage(index, 1)}>→</button></div><span>{index === 0 ? '封面 · ' : ''}{image.file?.name || filenameFromUrl(image.url || '')}</span></div>)}</div>}</>}
           <div className="composer-state"><span>发布设置</span><label><input type="checkbox" checked={Boolean(draft.featured)} onChange={(event) => update('featured', Number(event.target.checked))} />主页精选</label><label><input type="checkbox" checked={Boolean(draft.pinned)} onChange={(event) => update('pinned', Number(event.target.checked))} />栏目置顶</label><label className="schedule-field">定时发布 <input type="datetime-local" value={localDateTime(draft.publish_at)} min={localDateTime(Math.floor(Date.now() / 1000) + 60)} onChange={(event) => update('publish_at', event.target.value ? Math.floor(new Date(event.target.value).getTime() / 1000) : null)} /></label></div>
         </section><section className="composer-preview"><p>/ LIVE PREVIEW</p><h1>{draft.title || '尚未填写标题'}</h1>{draft.subtitle && <div className="preview-meta">{draft.subtitle}</div>}<div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{draft.body || '正文内容会实时显示在这里。'}</ReactMarkdown></div>{images.length > 0 && <div className="preview-images">{images.map((image) => <img key={image.key} src={image.preview} alt="" />)}</div>}</section></div>

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   addContentNote, deleteContentNote, getContent, updateContentNote, type UnifiedNote,
 } from '../api'
+import MarkdownToolbar from './MarkdownToolbar'
 
 type ProcessNote = UnifiedNote
 
@@ -17,12 +18,23 @@ export default function ProcessNotesEditor({ parentId, initialNotes }: {
   initialNotes: ProcessNote[]
 }) {
   const [notes, setNotes] = useState<ProcessNote[]>(initialNotes)
-  const [content, setContent] = useState('')
+  const draftKey = `longteng:process-note-draft:${parentId}`
+  const [content, setContent] = useState(() => localStorage.getItem(draftKey) || '')
   const [files, setFiles] = useState<File[]>([])
   const [editingId, setEditingId] = useState(0)
   const [saving, setSaving] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [draftSaved, setDraftSaved] = useState(Boolean(content))
 
   useEffect(() => setNotes(initialNotes), [initialNotes])
+  useEffect(() => { const saved = localStorage.getItem(draftKey) || ''; setContent(saved); setDraftSaved(Boolean(saved)) }, [draftKey])
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (content.trim()) { localStorage.setItem(draftKey, content); setDraftSaved(true) }
+      else { localStorage.removeItem(draftKey); setDraftSaved(false) }
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [content, draftKey])
 
   async function reload() {
     setNotes((await getContent(parentId)).content.notes || [])
@@ -32,6 +44,8 @@ export default function ProcessNotesEditor({ parentId, initialNotes }: {
     setContent('')
     setFiles([])
     setEditingId(0)
+    localStorage.removeItem(draftKey)
+    setDraftSaved(false)
   }
 
   function beginEdit(note: ProcessNote) {
@@ -70,8 +84,9 @@ export default function ProcessNotesEditor({ parentId, initialNotes }: {
   return <section className="process-notes-editor">
     <header><div><span>/ PROCESS NOTES</span><h2>过程说明</h2></div><strong>{notes.length} 条记录</strong></header>
     <div className="process-note-compose">
-      <div className="process-note-compose-head"><strong>{editingId ? `编辑说明 #${editingId}` : '添加一条说明'}</strong><span>支持 Markdown</span></div>
-      <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="记录现象、排查过程、关键代码或最终结论…" />
+      <div className="process-note-compose-head"><strong>{editingId ? `编辑说明 #${editingId}` : '添加一条说明'}</strong><span>{draftSaved ? '草稿已自动保存在本机' : '支持 Markdown'}</span></div>
+      <MarkdownToolbar textareaRef={textareaRef} value={content} onChange={setContent} />
+      <textarea ref={textareaRef} value={content} onChange={(event) => setContent(event.target.value)} placeholder="记录现象、排查过程、关键代码或最终结论…" />
       {!editingId && <label className="process-note-upload"><input type="file" accept="image/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} /><span>添加图片</span><small>{files.length ? `已选择 ${files.length} 张` : '最多 5 张'}</small></label>}
       <div className="process-note-actions">{editingId > 0 && <button onClick={reset}>取消编辑</button>}<button disabled={saving} className="primary" onClick={save}>{saving ? '保存中…' : editingId ? '保存修改' : '发布说明'}</button></div>
     </div>
