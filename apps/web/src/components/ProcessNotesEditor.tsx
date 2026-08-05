@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  addContentNote, deleteContentNote, getContent, updateContentNote, type UnifiedNote,
+  addContentNote, deleteContentNote, deleteContentNoteDraft, getContent, getContentNoteDraft,
+  saveContentNoteDraft, updateContentNote, type UnifiedNote,
 } from '../api'
 import MarkdownToolbar from './MarkdownToolbar'
 
@@ -17,52 +18,116 @@ export default function ProcessNotesEditor({ parentId, initialNotes }: {
   parentId: number
   initialNotes: ProcessNote[]
 }) {
+  const temporaryKey = `longteng:process-note-temporary:${parentId}`
   const [notes, setNotes] = useState<ProcessNote[]>(initialNotes)
-  const draftKey = `longteng:process-note-draft:${parentId}`
-  const [content, setContent] = useState(() => localStorage.getItem(draftKey) || '')
+  const [content, setContent] = useState('')
+  const [serverDraft, setServerDraft] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [editingId, setEditingId] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [draftLoaded, setDraftLoaded] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [draftSaved, setDraftSaved] = useState(Boolean(content))
+  const newNoteBuffer = useRef('')
 
   useEffect(() => setNotes(initialNotes), [initialNotes])
-  useEffect(() => { const saved = localStorage.getItem(draftKey) || ''; setContent(saved); setDraftSaved(Boolean(saved)) }, [draftKey])
   useEffect(() => {
+    let cancelled = false
+    setDraftLoaded(false)
+    getContentNoteDraft(parentId).then(({ draft }) => {
+      if (cancelled) return
+      const saved = draft?.body || ''
+      const temporary = localStorage.getItem(temporaryKey) || localStorage.getItem(`longteng:process-note-draft:${parentId}`) || ''
+      let next = saved
+      if (temporary && temporary !== saved) {
+        if (confirm('发现一份未保存的临时过程说明，是否恢复？')) next = temporary
+        else localStorage.removeItem(temporaryKey)
+      }
+      localStorage.removeItem(`longteng:process-note-draft:${parentId}`)
+      setServerDraft(saved)
+      setContent(next)
+      newNoteBuffer.current = next
+      setDraftLoaded(true)
+    }).catch((reason) => alert(reason.message || '读取过程说明草稿失败'))
+    return () => { cancelled = true }
+  }, [parentId, temporaryKey])
+
+  useEffect(() => {
+    if (!draftLoaded || editingId) return
+    newNoteBuffer.current = content
     const timer = window.setTimeout(() => {
-      if (content.trim()) { localStorage.setItem(draftKey, content); setDraftSaved(true) }
-      else { localStorage.removeItem(draftKey); setDraftSaved(false) }
+      if (content && content !== serverDraft) localStorage.setItem(temporaryKey, content)
+      else localStorage.removeItem(temporaryKey)
     }, 350)
     return () => window.clearTimeout(timer)
-  }, [content, draftKey])
+  }, [content, draftLoaded, editingId, serverDraft, temporaryKey])
 
   async function reload() {
     setNotes((await getContent(parentId)).content.notes || [])
   }
 
-  function reset() {
-    setContent('')
-    setFiles([])
-    setEditingId(0)
-    localStorage.removeItem(draftKey)
-    setDraftSaved(false)
-  }
-
   function beginEdit(note: ProcessNote) {
+    newNoteBuffer.current = content
     setEditingId(note.id)
     setContent(note.body || '')
     setFiles([])
     document.querySelector('.process-note-compose')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
-  async function save() {
+  function cancelEdit() {
+    setEditingId(0)
+    setContent(newNoteBuffer.current || serverDraft)
+  }
+
+  async function saveDraft() {
+    if (!content.trim()) return alert('请先填写需要保存的草稿内容')
+    setSaving(true)
+    try {
+      const { draft } = await saveContentNoteDraft(parentId, content.trim())
+      setServerDraft(draft.body)
+      setContent(draft.body)
+      newNoteBuffer.current = draft.body
+      localStorage.removeItem(temporaryKey)
+    } catch (reason: any) {
+      alert(reason.message || '保存草稿失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function removeDraft() {
+    if (!confirm('删除这份过程说明草稿？当前输入也会一起清空。')) return
+    setSaving(true)
+    try {
+      await deleteContentNoteDraft(parentId)
+      setServerDraft('')
+      setContent('')
+      setFiles([])
+      newNoteBuffer.current = ''
+      localStorage.removeItem(temporaryKey)
+    } catch (reason: any) {
+      alert(reason.message || '删除草稿失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function publish() {
     if (!content.trim() && files.length === 0) return alert('请填写说明内容或选择图片')
     setSaving(true)
     try {
       if (editingId) await updateContentNote(parentId, editingId, content.trim())
       else await addContentNote(parentId, content.trim(), files)
       await reload()
-      reset()
+      if (editingId) {
+        setEditingId(0)
+        setContent(newNoteBuffer.current || serverDraft)
+      } else {
+        setServerDraft('')
+        setContent('')
+        setFiles([])
+        newNoteBuffer.current = ''
+        localStorage.removeItem(temporaryKey)
+      }
     } catch (reason: any) {
       alert(reason.message || '说明保存失败')
     } finally {
@@ -75,20 +140,26 @@ export default function ProcessNotesEditor({ parentId, initialNotes }: {
     try {
       await deleteContentNote(parentId, note.id)
       await reload()
-      if (editingId === note.id) reset()
+      if (editingId === note.id) cancelEdit()
     } catch (reason: any) {
       alert(reason.message || '说明删除失败')
     }
   }
 
+  const draftChanged = !editingId && content.trim() !== serverDraft
+  const statusText = !draftLoaded ? '正在读取草稿…' : editingId ? '正在修改已发布说明' : draftChanged ? '有未保存的临时修改' : serverDraft ? '草稿已保存至服务器' : '尚未保存草稿'
+
   return <section className="process-notes-editor">
     <header><div><span>/ PROCESS NOTES</span><h2>过程说明</h2></div><strong>{notes.length} 条记录</strong></header>
     <div className="process-note-compose">
-      <div className="process-note-compose-head"><strong>{editingId ? `编辑说明 #${editingId}` : '添加一条说明'}</strong><span>{draftSaved ? '草稿已自动保存在本机' : '支持 Markdown'}</span></div>
+      <div className="process-note-compose-head"><strong>{editingId ? `编辑说明 #${editingId}` : serverDraft ? '继续编辑草稿' : '添加一条说明'}</strong><span>{statusText}</span></div>
       <MarkdownToolbar textareaRef={textareaRef} value={content} onChange={setContent} />
       <textarea ref={textareaRef} value={content} onChange={(event) => setContent(event.target.value)} placeholder="记录现象、排查过程、关键代码或最终结论…" />
-      {!editingId && <label className="process-note-upload"><input type="file" accept="image/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} /><span>添加图片</span><small>{files.length ? `已选择 ${files.length} 张` : '最多 5 张'}</small></label>}
-      <div className="process-note-actions">{editingId > 0 && <button onClick={reset}>取消编辑</button>}<button disabled={saving} className="primary" onClick={save}>{saving ? '保存中…' : editingId ? '保存修改' : '发布说明'}</button></div>
+      {!editingId && <label className="process-note-upload"><input type="file" accept="image/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} /><span>添加图片</span><small>{files.length ? `已选择 ${files.length} 张（图片在发布时上传）` : '最多 5 张'}</small></label>}
+      <div className="process-note-actions">
+        {editingId ? <button onClick={cancelEdit}>取消编辑</button> : <>{serverDraft && <button disabled={saving} className="danger" onClick={removeDraft}>删除草稿</button>}<button disabled={saving || !draftChanged || !content.trim()} onClick={saveDraft}>保存草稿</button></>}
+        <button disabled={saving} className="primary" onClick={publish}>{saving ? '处理中…' : editingId ? '保存修改' : '发布说明'}</button>
+      </div>
     </div>
     <div className="process-note-list">
       {notes.length === 0 ? <p className="process-note-empty">还没有过程说明，从上方添加第一条。</p> : notes.map((note, index) => <article key={note.id}>

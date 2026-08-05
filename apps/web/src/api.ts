@@ -136,6 +136,10 @@ export function restoreContentRevision(id: number, revisionId: number) { return 
 export function addContentNote(contentId: number, body: string, files: File[] = []) { const fd = new FormData(); fd.append('body', body); files.forEach((file) => fd.append('images', file)); return request<{ id: number }>(`/contents/${contentId}/notes`, { method: 'POST', body: fd }) }
 export function updateContentNote(contentId: number, noteId: number, body: string) { return request<{ ok: true }>(`/contents/${contentId}/notes/${noteId}`, { method: 'PUT', body: JSON.stringify({ body }) }) }
 export function deleteContentNote(contentId: number, noteId: number) { return request<{ ok: true }>(`/contents/${contentId}/notes/${noteId}`, { method: 'DELETE' }) }
+export type ContentNoteDraft = { body: string; updated_at: number }
+export function getContentNoteDraft(contentId: number) { return request<{ draft: ContentNoteDraft | null }>(`/contents/${contentId}/note-draft`) }
+export function saveContentNoteDraft(contentId: number, body: string) { return request<{ draft: ContentNoteDraft }>(`/contents/${contentId}/note-draft`, { method: 'PUT', body: JSON.stringify({ body }) }) }
+export function deleteContentNoteDraft(contentId: number) { return request<{ ok: true }>(`/contents/${contentId}/note-draft`, { method: 'DELETE' }) }
 
 export function createCategory(payload: { channel_id: string; name: string; description?: string }) {
   return request<{ category: Category }>('/admin/categories', { method: 'POST', body: JSON.stringify(payload) })

@@ -219,6 +219,12 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_content_notes_v2_parent ON content_notes_v2(content_id, created_at, id);
 
+  CREATE TABLE IF NOT EXISTS content_note_drafts (
+    content_id  INTEGER PRIMARY KEY REFERENCES contents(id) ON DELETE CASCADE,
+    body        TEXT NOT NULL DEFAULT '',
+    updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+
   CREATE TABLE IF NOT EXISTS content_revisions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     content_id  INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
@@ -666,6 +672,30 @@ app.post('/api/contents/:id/revisions/:revisionId/restore', requireAuth, (req, r
   res.json({ ok: true })
 })
 
+app.get('/api/contents/:id/note-draft', requireAuth, (req, res) => {
+  const contentId = Number(req.params.id)
+  if (!db.prepare('SELECT id FROM contents WHERE id = ? AND deleted_at IS NULL').get(contentId)) return res.status(404).json({ error: '内容不存在' })
+  const draft = db.prepare('SELECT body, updated_at FROM content_note_drafts WHERE content_id = ?').get(contentId)
+  res.json({ draft: draft || null })
+})
+
+app.put('/api/contents/:id/note-draft', requireAuth, (req, res) => {
+  const contentId = Number(req.params.id)
+  const body = String(req.body?.body || '').trim()
+  if (!db.prepare('SELECT id FROM contents WHERE id = ? AND deleted_at IS NULL').get(contentId)) return res.status(404).json({ error: '内容不存在' })
+  if (!body) return res.status(400).json({ error: '草稿内容不能为空' })
+  if (body.length > 200000) return res.status(400).json({ error: '草稿内容过长' })
+  db.prepare(`INSERT INTO content_note_drafts (content_id, body) VALUES (?, ?)
+    ON CONFLICT(content_id) DO UPDATE SET body=excluded.body, updated_at=strftime('%s','now')`).run(contentId, body)
+  const draft = db.prepare('SELECT body, updated_at FROM content_note_drafts WHERE content_id = ?').get(contentId)
+  res.json({ draft })
+})
+
+app.delete('/api/contents/:id/note-draft', requireAuth, (req, res) => {
+  db.prepare('DELETE FROM content_note_drafts WHERE content_id = ?').run(Number(req.params.id))
+  res.json({ ok: true })
+})
+
 app.post('/api/contents/:id/notes', requireAuth, uploadLimiter, (req, res) => {
   upload.array('images', 5)(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message || '上传失败' })
@@ -676,7 +706,12 @@ app.post('/api/contents/:id/notes', requireAuth, uploadLimiter, (req, res) => {
         for (const file of files) if (!await validateImageMagic(file.path)) { await Promise.all(files.map((item) => unlink(item.path).catch(() => {}))); return res.status(400).json({ error: '文件内容与图片格式不符' }) }
         const body = String(req.body?.body || '').trim()
         if (!body && !files.length) return res.status(400).json({ error: '内容或图片至少有一个' })
-        const result = db.prepare('INSERT INTO content_notes_v2 (content_id, body, images) VALUES (?, ?, ?)').run(Number(req.params.id), body, JSON.stringify(files.map((file) => file.filename)))
+        const contentId = Number(req.params.id)
+        const result = db.transaction(() => {
+          const inserted = db.prepare('INSERT INTO content_notes_v2 (content_id, body, images) VALUES (?, ?, ?)').run(contentId, body, JSON.stringify(files.map((file) => file.filename)))
+          db.prepare('DELETE FROM content_note_drafts WHERE content_id = ?').run(contentId)
+          return inserted
+        })()
         res.status(201).json({ id: Number(result.lastInsertRowid) })
       } catch (e) {
         req.log?.error({ err: e }, 'create unified note failed')
