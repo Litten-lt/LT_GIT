@@ -14,6 +14,25 @@ function formatTimestamp(value: number) {
   return new Date(milliseconds).toLocaleDateString('zh-CN')
 }
 
+function renderableMarkdown(value: string) {
+  const source = value.split('\n')
+  const output: string[] = []
+  let inList = false
+
+  source.forEach((line) => {
+    const trimmed = line.trim()
+    const isList = /^[-*+]\s+\S/.test(trimmed)
+    const isChineseHeading = /^[一二三四五六七八九十百]+[、.．]\s*\S/.test(trimmed)
+
+    if (isList && !inList && output.length && output[output.length - 1] !== '') output.push('')
+    if (!isList && inList && trimmed) output.push('')
+    output.push(isChineseHeading ? `### ${trimmed}` : line)
+    inList = isList
+  })
+
+  return output.join('\n')
+}
+
 export default function ProcessNotesEditor({ parentId, initialNotes }: {
   parentId: number
   initialNotes: ProcessNote[]
@@ -160,7 +179,7 @@ export default function ProcessNotesEditor({ parentId, initialNotes }: {
         </div>
         <aside className="process-note-preview">
           <span>/ LIVE PREVIEW</span>
-          <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{content || '过程说明会实时显示在这里。'}</ReactMarkdown></div>
+          <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{renderableMarkdown(content) || '过程说明会实时显示在这里。'}</ReactMarkdown></div>
         </aside>
       </div>
       {!editingId && <label className="process-note-upload"><input type="file" accept="image/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} /><span>添加图片</span><small>{files.length ? `已选择 ${files.length} 张（图片在发布时上传）` : '最多 5 张'}</small></label>}
@@ -172,7 +191,7 @@ export default function ProcessNotesEditor({ parentId, initialNotes }: {
     <div className="process-note-list">
       {notes.length === 0 ? <p className="process-note-empty">还没有过程说明，从上方添加第一条。</p> : notes.map((note, index) => <article key={note.id}>
         <div className="process-note-meta"><span>{String(index + 1).padStart(2, '0')}</span><time>{formatTimestamp(note.created_at)}</time><div><button onClick={() => beginEdit(note)}>编辑</button><button className="danger" onClick={() => remove(note)}>删除</button></div></div>
-        {note.body && <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{note.body}</ReactMarkdown></div>}
+        {note.body && <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{renderableMarkdown(note.body)}</ReactMarkdown></div>}
         {note.images?.length > 0 && <div className="process-note-images">{note.images.map((src) => <img key={src} src={src} alt="" />)}</div>}
       </article>)}
     </div>
