@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Children, isValidElement, type ReactNode, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -8,6 +8,55 @@ import {
 import MarkdownToolbar from './MarkdownToolbar'
 
 type ProcessNote = UnifiedNote
+
+let mermaidInitialized = false
+
+function MermaidDiagram({ chart }: { chart: string }) {
+  const [svg, setSvg] = useState('')
+  const [error, setError] = useState('')
+  const diagramId = useRef(`mermaid-${Math.random().toString(36).slice(2)}`)
+
+  useEffect(() => {
+    let active = true
+    setSvg('')
+    setError('')
+    import('mermaid').then(({ default: mermaid }) => {
+      if (!mermaidInitialized) {
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'base',
+          themeVariables: {
+            background: '#f3ede3',
+            primaryColor: '#e4d8ca',
+            primaryTextColor: '#2b2a28',
+            primaryBorderColor: '#8a7568',
+            lineColor: '#765f53',
+            fontFamily: 'system-ui, sans-serif',
+          },
+        })
+        mermaidInitialized = true
+      }
+      return mermaid.render(diagramId.current, chart)
+    }).then(({ svg: rendered }) => {
+      if (active) setSvg(rendered)
+    }).catch(() => {
+      if (active) setError('图表语法有误，请检查 Mermaid 代码。')
+    })
+    return () => { active = false }
+  }, [chart])
+
+  if (error) return <div className="mermaid-error"><strong>{error}</strong><pre><code>{chart}</code></pre></div>
+  return <div className="mermaid-diagram" aria-label="Mermaid 图表" dangerouslySetInnerHTML={{ __html: svg }} />
+}
+
+function MarkdownPre({ children }: { children?: ReactNode }) {
+  const child = Children.toArray(children)[0]
+  if (isValidElement(child) && (child.props as { className?: string }).className === 'language-mermaid') {
+    return <MermaidDiagram chart={String((child.props as { children?: ReactNode }).children || '').trim()} />
+  }
+  return <pre>{children}</pre>
+}
 
 function formatTimestamp(value: number) {
   const milliseconds = value < 1_000_000_000_000 ? value * 1000 : value
@@ -179,7 +228,7 @@ export default function ProcessNotesEditor({ parentId, initialNotes }: {
         </div>
         <aside className="process-note-preview">
           <span>/ LIVE PREVIEW</span>
-          <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{renderableMarkdown(content) || '过程说明会实时显示在这里。'}</ReactMarkdown></div>
+          <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: MarkdownPre }}>{renderableMarkdown(content) || '过程说明会实时显示在这里。'}</ReactMarkdown></div>
         </aside>
       </div>
       {!editingId && <label className="process-note-upload"><input type="file" accept="image/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} /><span>添加图片</span><small>{files.length ? `已选择 ${files.length} 张（图片在发布时上传）` : '最多 5 张'}</small></label>}
@@ -191,7 +240,7 @@ export default function ProcessNotesEditor({ parentId, initialNotes }: {
     <div className="process-note-list">
       {notes.length === 0 ? <p className="process-note-empty">还没有过程说明，从上方添加第一条。</p> : notes.map((note, index) => <article key={note.id}>
         <div className="process-note-meta"><span>{String(index + 1).padStart(2, '0')}</span><time>{formatTimestamp(note.created_at)}</time><div><button onClick={() => beginEdit(note)}>编辑</button><button className="danger" onClick={() => remove(note)}>删除</button></div></div>
-        {note.body && <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{renderableMarkdown(note.body)}</ReactMarkdown></div>}
+        {note.body && <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: MarkdownPre }}>{renderableMarkdown(note.body)}</ReactMarkdown></div>}
         {note.images?.length > 0 && <div className="process-note-images">{note.images.map((src) => <img key={src} src={src} alt="" />)}</div>}
       </article>)}
     </div>
