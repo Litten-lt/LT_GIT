@@ -53,9 +53,9 @@ export default function UnifiedComposer() {
         if (id) {
           const item = (await getContent(id)).content
           const serverDraft = { channel_id: item.channel_id, category_id: item.category_id, title: item.title, subtitle: item.subtitle || '', body: item.body, status: item.status, featured: item.featured, pinned: item.pinned, publish_at: item.publish_at || null }
-          const local = localStorage.getItem(`longteng:content-edit:${id}`) || localStorage.getItem(`chesshub:content-edit:${id}`)
-          const restored = local && confirm('发现这篇内容有未提交的本地修改，是否恢复？') ? { ...serverDraft, ...JSON.parse(local).draft } : serverDraft
-          setDraft(restored)
+          localStorage.removeItem(`longteng:content-edit:${id}`)
+          localStorage.removeItem(`chesshub:content-edit:${id}`)
+          setDraft(serverDraft)
           setImages(item.images.map((url) => ({ key: url, url, preview: url }))); setNotes(item.notes || [])
           setRevisions((await listContentRevisions(id)).revisions)
         } else {

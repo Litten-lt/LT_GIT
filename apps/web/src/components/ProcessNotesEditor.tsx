@@ -153,8 +153,16 @@ export default function ProcessNotesEditor({ parentId, initialNotes }: {
     <header><div><span>/ PROCESS NOTES</span><h2>过程说明</h2></div><strong>{notes.length} 条记录</strong></header>
     <div className="process-note-compose">
       <div className="process-note-compose-head"><strong>{editingId ? `编辑说明 #${editingId}` : serverDraft ? '继续编辑草稿' : '添加一条说明'}</strong><span>{statusText}</span></div>
-      <MarkdownToolbar textareaRef={textareaRef} value={content} onChange={setContent} />
-      <textarea ref={textareaRef} value={content} onChange={(event) => setContent(event.target.value)} placeholder="记录现象、排查过程、关键代码或最终结论…" />
+      <div className="process-note-writing">
+        <div className="process-note-input">
+          <MarkdownToolbar textareaRef={textareaRef} value={content} onChange={setContent} />
+          <textarea ref={textareaRef} value={content} onChange={(event) => setContent(event.target.value)} placeholder="记录现象、排查过程、关键代码或最终结论…" />
+        </div>
+        <aside className="process-note-preview">
+          <span>/ LIVE PREVIEW</span>
+          <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{content || '过程说明会实时显示在这里。'}</ReactMarkdown></div>
+        </aside>
+      </div>
       {!editingId && <label className="process-note-upload"><input type="file" accept="image/*" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} /><span>添加图片</span><small>{files.length ? `已选择 ${files.length} 张（图片在发布时上传）` : '最多 5 张'}</small></label>}
       <div className="process-note-actions">
         {editingId ? <button onClick={cancelEdit}>取消编辑</button> : <>{serverDraft && <button disabled={saving} className="danger" onClick={removeDraft}>删除草稿</button>}<button disabled={saving || !draftChanged || !content.trim()} onClick={saveDraft}>保存草稿</button></>}
