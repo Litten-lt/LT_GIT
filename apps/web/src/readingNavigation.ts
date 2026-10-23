@@ -1,4 +1,4 @@
-export type ReadingChannel = 'journal' | 'life'
+export type ReadingChannel = 'journal'
 
 export function currentReturnPath() {
   return `${window.location.pathname}${window.location.search}`
@@ -10,9 +10,7 @@ export function readingHref(channel: ReadingChannel, id: number, returnTo = curr
 }
 
 export function readingReturn(channel: ReadingChannel, rawReturn: string | null, legacyFilter: string | null, categoryName?: string | null) {
-  const fallback = channel === 'journal'
-    ? { href: '/journal.html', label: '返回工作与学习' }
-    : { href: '/life.html', label: '返回生活分享' }
+  const fallback = { href: '/journal.html', label: '返回工作笔记' }
   const candidate = rawReturn || (legacyFilter ? `/${channel}.html?filter=${encodeURIComponent(legacyFilter)}` : '')
   if (!candidate.startsWith('/') || candidate.startsWith('//')) return fallback
   const target = new URL(candidate, window.location.origin)

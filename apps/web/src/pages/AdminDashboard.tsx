@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import App from '../App'
 import CategoryManager from '../components/CategoryManager'
 import { deleteContent, deleteContentPermanently, listContents, listTaxonomy, restoreContent, updateContent, type Channel, type ContentType, type UnifiedContent } from '../api'
-import { ensureLoggedIn, isAdmin } from '../auth'
 import { readingHref } from '../readingNavigation'
 
 const keyOf = (item: UnifiedContent) => String(item.id)
@@ -21,13 +20,13 @@ export default function AdminDashboard() {
   const [moveTo, setMoveTo] = useState('')
   const [batchMark, setBatchMark] = useState('')
   const returnTarget = initialType === 'work' || initialType === 'study'
-    ? { href: '/journal.html', label: '返回工作与学习' }
+    ? { href: '/journal.html', label: '返回工作笔记' }
     : initialType === 'figure' || initialType === 'travel' || initialType === 'note'
-      ? { href: '/life.html', label: '返回生活分享' }
+      ? { href: '/', label: '返回工作笔记' }
       : { href: '/', label: '返回主页' }
 
-  async function load() { setLoading(true); try { const [content, taxonomy] = await Promise.all([listContents(undefined, true), listTaxonomy()]); setItems(content.contents); setChannels(taxonomy.channels) } finally { setLoading(false) } }
-  useEffect(() => { if (!ensureLoggedIn()) return; if (!isAdmin()) { window.location.replace('/'); return }; load().catch((reason) => alert(reason.message || '读取内容失败')) }, [])
+  async function load() { setLoading(true); try { const [content, taxonomy] = await Promise.all([listContents(undefined, true), listTaxonomy()]); setItems(content.contents.filter(item => item.channel_id === 'journal')); setChannels(taxonomy.channels.filter(item => item.id === 'journal')) } finally { setLoading(false) } }
+  useEffect(() => { load().catch((reason) => alert(reason.message || '读取内容失败')) }, [])
 
   const filtered = useMemo(() => items.filter((item) => {
     const q = query.trim().toLowerCase()

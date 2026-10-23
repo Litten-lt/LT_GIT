@@ -1,7 +1,6 @@
-type LegacySection = 'work' | 'study' | 'figure' | 'travel' | 'note'
+type LegacySection = 'work' | 'study'
 const target: Record<LegacySection, { hub: string; type: string }> = {
   work: { hub: '/journal.html', type: 'work' }, study: { hub: '/journal.html', type: 'study' },
-  figure: { hub: '/life.html', type: 'figure' }, travel: { hub: '/life.html', type: 'travel' }, note: { hub: '/life.html', type: 'note' },
 }
 
 export function redirectLegacyVisitor(section: LegacySection) {

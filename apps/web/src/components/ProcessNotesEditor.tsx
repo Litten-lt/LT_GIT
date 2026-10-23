@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import {
   addContentNote, deleteContentNote, deleteContentNoteDraft, getContent, getContentNoteDraft,
   saveContentNoteDraft, updateContentNote, type UnifiedNote,

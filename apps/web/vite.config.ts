@@ -9,15 +9,10 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
+        about: resolve(__dirname, 'about.html'),
         admin: resolve(__dirname, 'admin.html'),
         compose: resolve(__dirname, 'compose.html'),
         journal: resolve(__dirname, 'journal.html'),
-        travel: resolve(__dirname, 'travel.html'),
-        blog: resolve(__dirname, 'blog.html'),
-        figures: resolve(__dirname, 'figures.html'),
-        login: resolve(__dirname, 'login.html'),
-        life: resolve(__dirname, 'life.html'),
-        notes: resolve(__dirname, 'notes.html'),
         work: resolve(__dirname, 'work.html'),
         study: resolve(__dirname, 'study.html'),
         search: resolve(__dirname, 'search.html'),

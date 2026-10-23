@@ -18,7 +18,7 @@ export default function Home() {
           <div>
             <div className="flex items-center gap-3 text-xs font-mono text-accent tracking-[0.18em]">
               <span className="h-px w-9 bg-accent" />
-              ENGINEERING / LIFE / SHENZHEN
+              ENGINEERING / NOTES / SHENZHEN
             </div>
             <h1 className="mt-7 max-w-3xl text-5xl sm:text-6xl md:text-7xl font-extrabold text-ink tracking-[-0.045em] leading-[1.02]">
               把底层技术做稳，<br />
@@ -26,24 +26,23 @@ export default function Home() {
             </h1>
             <p className="mt-7 max-w-2xl text-lg md:text-xl text-ink-soft leading-relaxed">
               我是 LongTeng，专注 WiFi、OpenWrt 与嵌入式产品开发。
-              这里记录工程现场，也收藏旅行、模型与日常生活。
+              这里记录工作中遇到的问题、排查过程与解决办法。
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
               <a href="#projects" className="btn-primary">查看最近更新 <span aria-hidden="true">↘</span></a>
-              <a href="/journal.html" className="btn-secondary">工作与学习</a>
-              <a href="/life.html" className="btn-secondary">生活分享</a>
+              <a href="/journal.html" className="btn-secondary">工作笔记</a>
             </div>
           </div>
           <aside className="hero-note" aria-label="个人状态">
             <p className="font-serif text-2xl text-ink">LongTeng<span className="text-accent">.</span></p>
             <div className="mt-6 space-y-4 text-sm">
               <div><span>职业主线</span><strong>嵌入式开发</strong></div>
-              <div><span>兴趣支线</span><strong>AI / Blender</strong></div>
+              <div><span>记录重点</span><strong>问题排查 / 项目复盘</strong></div>
               <div><span>所在地</span><strong>深圳，中国</strong></div>
             </div>
             <p className="mt-6 flex items-center gap-2 text-xs text-ink-soft">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              持续记录，偶尔折腾
+              持续实践，持续记录
             </p>
           </aside>
         </div>

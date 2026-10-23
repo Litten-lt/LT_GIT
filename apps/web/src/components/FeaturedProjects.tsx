@@ -33,11 +33,11 @@ const fallbackCards: ProjectCard[] = [
   },
   {
     index: '03',
-    type: 'PLAYGROUND',
-    title: 'AI 与创意实验',
-    description: '用 AI、Blender 和 Web 技术验证小想法，探索更具表达性的作品形态。',
-    meta: 'AI · Blender · React',
-    href: '/blog.html',
+    type: 'PROBLEM SOLVING',
+    title: '问题排查与复盘',
+    description: '记录现象、分析原因、验证解决办法，为下一次遇到同类问题留下依据。',
+    meta: '排查 · 验证 · 复盘',
+    href: '/journal.html',
     tone: 'project-plum',
   },
 ]
@@ -53,7 +53,7 @@ function cardsFromContent(contents: UnifiedContent[]): ProjectCard[] {
     index: String(index + 1).padStart(2, '0'),
     type: item.category_name || 'FIELD NOTE',
     title: item.title,
-    description: cleanDescription(item.body),
+    description: cleanDescription(item.subtitle || item.body),
     meta: item.note_count + ' 条过程记录 · ' + item.date,
     href: readingHref('journal', item.id, '/'),
     tone: index === 0 ? 'project-warm' : index === 1 ? 'project-olive' : 'project-plum',
@@ -67,7 +67,7 @@ export default function FeaturedProjects() {
 
   useEffect(() => {
     let cancelled = false
-    listContents('journal')
+    listContents('journal', false, true)
       .then((data) => {
         if (cancelled) return
         const next = cardsFromContent(data.contents)
@@ -85,11 +85,11 @@ export default function FeaturedProjects() {
       <div className="section-heading">
         <div>
           <p>/ SELECTED WORK</p>
-          <h2>最近在做什么<span>。</span></h2>
+          <h2>最近的工作笔记<span>。</span></h2>
         </div>
         <p className="section-intro">
           {usingLiveContent
-            ? '从工作记录与学习笔记中自动选出的最近内容，持续更新。'
+            ? '从工作笔记中自动选出的最近内容，持续更新。'
             : '我更关心技术最终解决了什么问题，以及它能否被稳定使用和持续维护。'}
         </p>
       </div>

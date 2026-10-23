@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Deploy the API entry point and source modules, then restart PM2."""
-import os, sys, time, tarfile, tempfile, paramiko
+import os, sys, time, tarfile, tempfile, paramiko, shlex
 from pathlib import Path
 
 sys.stdout.reconfigure(errors="replace")
@@ -30,15 +30,19 @@ with tempfile.TemporaryDirectory() as temp_dir:
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(LOCAL / "server.js", arcname="server.js")
         tar.add(LOCAL / "src", arcname="src")
+        tar.add(LOCAL / "package.json", arcname="package.json")
+        tar.add(LOCAL / "package-lock.json", arcname="package-lock.json")
 
     sftp = client.open_sftp()
     sftp.put(str(archive), REMOTE_TMP)
     sftp.close()
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    run(f"sudo -n tar -czf /tmp/longteng-api-backup-{stamp}.tar.gz -C {REMOTE_APP} server.js src 2>/dev/null || sudo -n cp {REMOTE_APP}/server.js /tmp/longteng-api-backup-{stamp}.js")
-    run(f"sudo -n cp {REMOTE_APP}/data/longteng.db /tmp/longteng-db-backup-{stamp}.db")
-    run(f"sudo -n rm -rf {REMOTE_APP}/src && sudo -n tar -xzf {REMOTE_TMP} -C {REMOTE_APP} && sudo -n chown -R ubuntu:ubuntu {REMOTE_APP}/server.js {REMOTE_APP}/src")
+    run(f"sudo -n tar -czf /tmp/longteng-api-backup-{stamp}.tar.gz -C {REMOTE_APP} server.js src package.json package-lock.json 2>/dev/null || sudo -n cp {REMOTE_APP}/server.js /tmp/longteng-api-backup-{stamp}.js")
+    backup_code = f"import Database from 'better-sqlite3'; const db = new Database('data/longteng.db'); await db.backup('/tmp/longteng-db-backup-{stamp}.db'); db.close();"
+    run(f"cd {REMOTE_APP} && sudo -n node --input-type=module -e {shlex.quote(backup_code)}")
+    run(f"sudo -n rm -rf {REMOTE_APP}/src && sudo -n tar -xzf {REMOTE_TMP} -C {REMOTE_APP} && sudo -n chown -R ubuntu:ubuntu {REMOTE_APP}/server.js {REMOTE_APP}/src {REMOTE_APP}/package.json {REMOTE_APP}/package-lock.json")
+    run(f"cd {REMOTE_APP} && npm prune --omit=dev --ignore-scripts --offline --no-audit --no-fund", timeout=120)
     run(f"cd {REMOTE_APP} && node --check server.js && node --check src/app.js && sudo -n pm2 restart {PM2_NAME}", timeout=60)
     run(f"sleep 2; curl -fsS http://127.0.0.1:3000/api/health; echo; sudo -n pm2 describe {PM2_NAME} | grep -E 'status|uptime' | head -2", timeout=20)
 

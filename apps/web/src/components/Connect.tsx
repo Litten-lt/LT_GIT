@@ -25,7 +25,7 @@ export default function Connect() {
           有想法，来聊聊<span className="text-accent">。</span>
         </h2>
         <p className="mt-5 max-w-xl text-ink-soft leading-relaxed">
-          技术合作、产品讨论，或者只是想交换一些关于 AI、模型和生活的有趣发现，都欢迎联系。
+          技术合作、产品讨论，或交流工作中的问题与实践经验，都欢迎联系。
         </p>
       </div>
       <div className="connect-links">

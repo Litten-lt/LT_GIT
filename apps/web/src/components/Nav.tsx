@@ -1,6 +1,6 @@
 const items = [
-  { label: '工作与学习', href: '/journal.html' },
-  { label: '生活', href: '/life.html' },
+  { label: '工作笔记', href: '/journal.html' },
+  { label: '最近更新', href: '/#projects' },
   { label: '联系', href: '/#contact' },
 ]
 
