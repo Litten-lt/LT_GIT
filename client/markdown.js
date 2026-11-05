@@ -22,7 +22,7 @@ renderer.code = ({text,lang}) => /^mermaid(?:\s|$)/i.test(lang || '')
   : '<pre><code>'+escape(text)+'</code></pre>'
 
 export function markdown(source) {
-  return DOMPurify.sanitize(marked.parse(normalizeLegacy(source), {renderer,gfm:true,breaks:false}), {ADD_ATTR:['data-mermaid'],FORBID_TAGS:['style','script','iframe','form','input']})
+  return DOMPurify.sanitize(marked.parse(normalizeLegacy(source), {renderer,gfm:true,breaks:true}), {ADD_ATTR:['data-mermaid'],FORBID_TAGS:['style','script','iframe','form','input']})
 }
 
 let mermaidPromise, nextId = 0
