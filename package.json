@@ -1,15 +1,33 @@
 {
-  "name": "zhimu-workspace",
-  "private": true,
+  "name": "zhimu",
   "version": "0.1.0",
-  "description": "知木知识树工作区",
+  "private": true,
+  "type": "module",
+  "description": "知木 — 独立的知识树与枝叶管理系统",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "setup": "npm --prefix zhimu ci",
-    "start": "npm --prefix zhimu start",
-    "dev": "npm --prefix zhimu run dev",
-    "build": "npm --prefix zhimu run build",
-    "test": "npm --prefix zhimu test",
-    "verify": "npm --prefix zhimu run verify",
-    "deploy": "python zhimu/scripts/deploy.py"
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "check": "node --check server.js && node --check src/app.js && node --check src/records.js && node --check public/app.js && node --check public/tree.js",
+    "test": "node --test tests/*.test.mjs",
+    "verify": "npm run check && npm test",
+    "build": "node scripts/build.mjs",
+    "setup": "npm ci",
+    "deploy": "python scripts/deploy.py"
+  },
+  "dependencies": {
+    "better-sqlite3": "11.10.0",
+    "dompurify": "3.4.17",
+    "esbuild": "0.25.12",
+    "express": "4.22.3",
+    "file-type": "21.3.2",
+    "marked": "15.0.12",
+    "mermaid": "11.17.2",
+    "multer": "2.5.0"
+  },
+  "overrides": {
+    "katex": "^0.18.2"
   }
 }

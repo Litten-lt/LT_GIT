@@ -4,7 +4,7 @@ import paramiko
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 sys.stdout.reconfigure(errors='replace')
-root=Path(__file__).resolve().parents[2];private=root/'artifacts/zhimu-operations';private.mkdir(exist_ok=True)
+root=Path(__file__).resolve().parents[1];support=Path(os.environ.get('ZHIMU_LOCAL_DIR',str(root.parent/'zhimu-local')));private=support/'zhimu-operations';private.mkdir(parents=True,exist_ok=True)
 c=paramiko.SSHClient();c.load_system_host_keys();c.set_missing_host_key_policy(paramiko.AutoAddPolicy());p=os.environ.get('SSH_PASS');user=os.environ.get('LT_DEPLOY_USER','ubuntu');host='159.75.97.172'
 c.connect(host,username=user,password=p,look_for_keys=not p,allow_agent=not p,timeout=20)
 def run(command):
@@ -66,7 +66,7 @@ WantedBy=timers.target
  run('sudo -n install -m 600 -o '+user+' /var/backups/zhimu/initial-admin.json /tmp/zhimu-initial-admin-transfer.json')
  s.get('/tmp/zhimu-initial-admin-transfer.json',str(private/'admin-credentials.json'));s.remove('/tmp/zhimu-initial-admin-transfer.json')
  run('sudo -n rm -- /var/backups/zhimu/initial-admin.json')
- config={'Host':host,'User':user,'KeyPath':str(keyfile),'KnownHosts':str(known),'SecretPath':str(private/'key-password.dpapi'),'Destination':str(root/'artifacts/zhimu-offsite-backups'),'Python':sys.executable}
+ config={'Host':host,'User':user,'KeyPath':str(keyfile),'KnownHosts':str(known),'SecretPath':str(private/'key-password.dpapi'),'Destination':str(support/'zhimu-offsite-backups'),'Python':sys.executable}
  (private/'backup-config.json').write_text(json.dumps(config,indent=2),encoding='utf8')
  s.close()
 finally:c.close()

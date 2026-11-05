@@ -32,7 +32,7 @@
 - 导入前数据库：`/var/backups/zhimu/pre-original-import-20261102-154227.db`
 - 导入前图片：同路径加 `.uploads.tar.gz`
 - 原始快照、分类清单、图片和旧新编号回执：`/var/backups/zhimu/original-import-20261102-154227/`
-- 本地同份调查材料与生产回执：`artifacts/original-notes-audit/`，不纳入 Git。
+- 本地同份调查材料与生产回执：`../zhimu-local/original-notes-audit/`，不纳入 Git。
 
 迁移工具：`zhimu/scripts/migrate-original.mjs`。工具先校验原始正文和图片，使用单个 SQLite 事务替换测试数据并导入，拒绝未经显式指定的非空目标覆盖。重复执行会重建目标内容，因此不应在日常新增正式内容后重新执行替换导入。
 

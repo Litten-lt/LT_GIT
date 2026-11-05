@@ -9,7 +9,7 @@
 - 首次登录强制修改初始密码；修改密码使所有设备会话失效。支持退出登录。
 - 生产环境拒绝通过 HTTP 登录，HTTP 页面不展示密码输入表单；本机 localhost/127.0.0.1 开发入口可登录。
 
-初始账号信息位于本机受限目录 `artifacts/zhimu-operations/admin-credentials.json`，不纳入 Git，也未输出到聊天或日志。服务器初始化用的明文凭证文件已删除。首次改密后该初始密码作废。**本地与服务器是独立数据库，各自修改密码，不自动同步。**
+初始账号信息位于本机受限目录 `../zhimu-local/zhimu-operations/admin-credentials.json`，不纳入 Git，也未输出到聊天或日志。服务器初始化用的明文凭证文件已删除。首次改密后该初始密码作废。**本地与服务器是独立数据库，各自修改密码，不自动同步。**
 
 本地服务：http://127.0.0.1:3210/?view=login
 
@@ -38,7 +38,7 @@
 - Windows 任务 `Zhimu Daily Offsite Backup` 每天北京时间 09:10 和当前用户登录时执行。仅在当前用户登录环境运行；错过后补执行，失败每 15 分钟重试、最多 3 次。
 - 使用专用加密 Ed25519 私钥，口令由 Windows 当前用户 DPAPI 加密，目录 ACL 仅当前用户和 SYSTEM 可访问。
 - 服务器公钥记录已固定。远程 SSH key 设置 `restrict` 和固定 `cat /home/ubuntu/.zhimu-backup/latest.tar.gz` 命令；它不能执行任意 shell 或转发端口。
-- 下载目录：`artifacts/zhimu-offsite-backups/`，保留 7 份日备份和 4 份周备份；网络传输不依赖当前异常的域名 HTTPS。
+- 下载目录：`../zhimu-local/zhimu-offsite-backups/`，保留 7 份日备份和 4 份周备份；网络传输不依赖当前异常的域名 HTTPS。
 - 电脑未开机或用户未登录时，服务器备份照常运行；本机副本要等下次登录或任务触发才能更新。
 
 已执行真实服务器备份、Windows 计划任务和下载后的本地隔离恢复。恢复结果：SQLite `ok`，187 篇知识、27 次记录、1 个管理员，所有图片存在。18 项自动化测试通过。

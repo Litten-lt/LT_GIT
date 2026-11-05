@@ -1,29 +1,14 @@
-# Dependencies and build output
 node_modules/
-dist/
-
-# Local configuration and runtime data
+data/
 .env
 !.env.example
-apps/api/data/
-apps/api/uploads/
-apps/api/tests/.test-data/
-apps/api/test-debug/
-apps/api/test-data/
-apps/api/test-uploads/
-
-# Generated deployment artifacts and local logs
-artifacts/
-*.tar.gz
 *.log
-
-# One-off diagnostics should live outside the repository
-probe*.py
-check-*.py
-check-*.mjs
-debug-*.py
-repro-*.mjs
-
-# Python generated files
 __pycache__/
 *.pyc
+*.db
+*.db-*
+*.pem
+*.dpapi
+*.tar.gz
+backup-config.json
+admin-credentials.json

@@ -21,9 +21,9 @@
 | `zhimu/` | 正式系统，包括本地数据库、上传图片和独立依赖 |
 | `.git/`、`.agents/` | 版本历史与项目工作规则 |
 | `docs/zhimu-*` | 运维与迁移说明 |
-| `artifacts/zhimu-operations/` | 本机备份任务使用的配置、密钥等受限文件；不能按临时产物删除 |
-| `artifacts/zhimu-offsite-backups/` | 异机备份 |
-| `artifacts/original-notes-audit/` | 原始笔记快照、未导入内容、图片与迁移核验材料 |
+| `../zhimu-local/zhimu-operations/` | 本机备份任务使用的配置、密钥等受限文件；不能按临时产物删除 |
+| `../zhimu-local/zhimu-offsite-backups/` | 异机备份 |
+| `../zhimu-local/original-notes-audit/` | 原始笔记快照、未导入内容、图片与迁移核验材料 |
 
 ## 需要解除的依赖
 
@@ -40,6 +40,6 @@
 3. 确认域名正式入口与旧站退役安排；域名备案与证书状态需另行现场核验。
 4. 停用旧站服务并观察，保留可回滚归档。
 5. 再删除本地 `apps/`、旧 `scripts/deploy/`、根 node_modules；重新生成适合知木的根依赖文件，不能直接沿用旧锁文件。
-6. 核对 `artifacts/book-demo`、`tree-demo`、`tree-v1-preview`、导入试验库与历史截图，只清理已确认无引用且不含唯一数据的材料。
+6. 核对 `../zhimu-local/book-demo`、`tree-demo`、`tree-v1-preview`、导入试验库与历史截图，只清理已确认无引用且不含唯一数据的材料。
 
 本次未删除旧项目、历史材料、任何正式笔记或备份，未变更服务器。

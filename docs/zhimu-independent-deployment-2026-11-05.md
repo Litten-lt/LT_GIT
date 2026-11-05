@@ -28,7 +28,7 @@
 
 本地源码、旧配置、未提交修改、数据归档：
 
-`artifacts/legacy-retirement/20261105-102607/legacy-local-source-and-data.tar.gz`
+`../zhimu-local/legacy-retirement/20261105-102607/legacy-local-source-and-data.tar.gz`
 
 移出的本地旧运行数据：同目录 `local-runtime/`。
 
@@ -40,4 +40,4 @@
 
 旧数据库和运行文件保留在 `/opt/longteng-api/data`、`.env`；旧上传数据 `/var/www/longteng-data` 及 `figures-data` 历史资料未删除；旧前端 server 目录中残留的源码、构建、依赖和清单经核对后也已清除，非代码文件仍保留，均不再由活动 Nginx 或 PM2 使用。其他棋类站点、无关服务器目录未改动。
 
-`artifacts/zhimu-operations`、`zhimu-offsite-backups` 和 `original-notes-audit` 仍需保留。历史材料属于归档，不是现役应用依赖。源码变更尚未提交 Git。
+`../zhimu-local/zhimu-operations`、`zhimu-offsite-backups` 和 `original-notes-audit` 仍需保留。历史材料属于归档，不是现役应用依赖。源码变更尚未提交 Git。
