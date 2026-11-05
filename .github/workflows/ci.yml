@@ -1,31 +1,22 @@
-name: CI
-
+name: Zhimu CI
 on:
   push:
     branches: [main]
-    paths:
-      - 'apps/**'
-      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'apps/**'
-      - '.github/workflows/ci.yml'
-
-env:
-  NODE_VERSION: '20'
-
 jobs:
   verify:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: zhimu
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '22'
           cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Verify web and API
-        run: npm run verify
+          cache-dependency-path: zhimu/package-lock.json
+      - run: npm ci
+      - run: npm run verify
+      - run: npm run build

@@ -1,48 +1,35 @@
-# LongTeng Personal Site
+# 知木 Zhimu
 
-个人工作笔记本采用前后端分离结构，无账号、登录或身份校验。管理中心可直接使用。仓库根目录只保留项目入口、文档和可复用工具。
+个人知识树与枝叶管理系统。当前工作区只维护知木；旧网站已退役，知识星云 demo 已删除。
+
+## 本地启动
+
+需要 Node.js 22.12 或更高版本。
+
+```powershell
+npm run setup
+npm start
+```
+
+访问 http://127.0.0.1:3210/ 。也可以进入 `zhimu/` 独立运行 `npm ci`、`npm start`。
 
 ## 目录
 
-```text
-apps/
-  web/             React + Vite 前端
-  api/             Express + SQLite 后端
-    src/            应用装配、配置、中间件与服务
-docs/
-  archive/         历史部署记录
-scripts/
-  deploy/          当前生产部署工具
-artifacts/         本地构建包（不提交）
-```
+- `zhimu/`：独立应用、前端资源、数据库代码、测试和部署配置。
+- `docs/`：知木迁移、备份、运维与退役记录。
+- `artifacts/`：本机备份、受限运维文件及历史归档，不提交 Git；不能整体删除。
+- `.github/workflows/ci.yml`：知木独立安装、验证及构建。
 
-## 本地开发
+## 检查和部署
 
-前端：
-
-```bash
-cd apps/web
-npm install
-npm run dev
-```
-
-后端：
-
-```bash
-cd apps/api
-npm install
-cp .env.example .env
-npm run dev
-```
-
-## 验证
-
-```bash
+```powershell
 npm run verify
+npm run build
+npm run deploy
 ```
 
-也可以在仓库根目录分别运行 `npm run dev:web`、`npm run dev:api`、`npm run build` 和 `npm run test`。
+部署需要 Python、paramiko 及已有 SSH 连接配置。生产服务为 PM2 `zhimu`，监听本机 3210；独立 Nginx 配置为 `zhimu/deploy/`。应用发布到 `/opt/zhimu/releases/`，正式数据位于 `/opt/zhimu-data/`，部署不覆盖数据。
 
-完整生产部署、日常更新、回滚、备份恢复与更换服务器说明见 [docs/deployment.md](docs/deployment.md)。
+线上入口：http://159.75.97.172/ ，会跳转 `/zhimu/`。域名备案与 HTTPS 证书仍需另行完成，不应绕过安全连接要求登录。
 
-内容频道、可配置分类和未分类兜底规则见 [docs/taxonomy.md](docs/taxonomy.md)。
+更多说明见 [知木说明](zhimu/README.md)、[运维说明](docs/zhimu-operations-2026-11-02.md)、[独立部署与退役记录](docs/zhimu-independent-deployment-2026-11-05.md)。

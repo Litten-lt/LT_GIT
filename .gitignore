@@ -23,3 +23,7 @@ check-*.py
 check-*.mjs
 debug-*.py
 repro-*.mjs
+
+# Python generated files
+__pycache__/
+*.pyc

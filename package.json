@@ -1,16 +1,15 @@
 {
-  "name": "longteng-personal-site",
+  "name": "zhimu-workspace",
   "private": true,
   "version": "0.1.0",
-  "workspaces": [
-    "apps/web",
-    "apps/api"
-  ],
+  "description": "知木知识树工作区",
   "scripts": {
-    "dev:web": "npm run dev --workspace longteng-web",
-    "dev:api": "npm run dev --workspace longteng-api",
-    "build": "npm run build --workspace longteng-web",
-    "test": "npm run test --workspace longteng-api",
-    "verify": "npm run build && npm run test"
+    "setup": "npm --prefix zhimu ci",
+    "start": "npm --prefix zhimu start",
+    "dev": "npm --prefix zhimu run dev",
+    "build": "npm --prefix zhimu run build",
+    "test": "npm --prefix zhimu test",
+    "verify": "npm --prefix zhimu run verify",
+    "deploy": "python zhimu/scripts/deploy.py"
   }
 }
