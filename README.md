@@ -38,11 +38,11 @@ npm run deploy
 
 ## 线上
 
-入口：http://159.75.97.172/ ，跳转到 `/zhimu/`。
+正式入口：https://chesshub.fun/zhimu/ 。IP 地址保留为运维检查入口。
 
 PM2 服务 `zhimu` 监听本机 3210；代码在 `/opt/zhimu/releases/`，当前版本由 `/opt/zhimu/current` 指向；正式数据独立保存在 `/opt/zhimu-data/`。部署不上传本地数据，不覆盖正式数据库。Nginx 使用 `deploy/nginx.conf` 和 `deploy/site.conf`，旧 API 不再提供服务。
 
-域名备案与 HTTPS 证书尚待处理。生产管理员登录要求 HTTPS，不能通过公网 HTTP 提交密码。本地和线上数据库独立，不自动同步。
+域名 ICP 备案已通过。正式入口为 https://chesshub.fun/zhimu/ ，HTTP 和 www 域名自动跳转到该入口。证书覆盖两个域名，由 Certbot 自动续期，续期后自动检查并重载 Nginx。生产管理员登录要求 HTTPS，不能通过公网 HTTP 提交密码。本地和线上数据库独立，不自动同步。网站页脚已展示湘ICP备2026053285号-1并链接工信部查询网站，公安联网备案已提交，正在等待审核。
 
 ## 文档
 
@@ -50,3 +50,5 @@ PM2 服务 `zhimu` 监听本机 3210；代码在 `/opt/zhimu/releases/`，当前
 - [原笔记迁移](docs/zhimu-original-import-2026-11-02.md)
 - [独立部署与旧站退役](docs/zhimu-independent-deployment-2026-11-05.md)
 - [仓库根目录迁移](docs/repository-root-migration-2026-11-05.md)
+
+- [域名上线与备案记录](docs/domain-launch-2026-11-10.md)

@@ -11,7 +11,7 @@ const publicDir=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../pu
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status})}
 const idOf=value=>{const id=Number(value);if(!Number.isSafeInteger(id)||id<=0)fail('编号无效');return id}
 const nullableId=value=>value==null||value===''?null:idOf(value)
-const text=(value,max,label)=>{if(typeof value!=='string'||value.length>max)fail(`${label}需为文字，且不超过 ${max} 字`);return value.trim()}
+const text=(value,max,label,trim=true)=>{if(typeof value!=='string'||value.length>max)fail(`${label}需为文字，且不超过 ${max} 字`);return trim?value.trim():value}
 
 export function createApp({filename=':memory:',basePath='',secureCookies=false,backupFile,uploadDir=path.join(path.dirname(filename===':memory:'?path.join(publicDir,'../data/zhimu.db'):filename),'uploads')}={}) {
   if(basePath && !/^\/[a-z0-9-]+$/.test(basePath))throw new Error('BASE_PATH 格式无效')
@@ -95,8 +95,8 @@ export function createApp({filename=':memory:',basePath='',secureCookies=false,b
   router.get('/api/notes/:id',route((req,res)=>{const n=db.prepare('SELECT * FROM notes WHERE id=? AND deleted_at IS NULL').get(idOf(req.params.id));if(!n||!req.admin&&n.status!=='published')fail('知识点不存在',404);res.json({note:{...notes([n])[0],records:recordsFor(n.id),record_draft:req.admin?draftFor(n.id):null}})}))
   function notePayload(body,current={}){
     const value={...{title:'',summary:'',body:'',tags:[],images:[],status:'draft',branch_id:null},...current,...body}
-    const title=text(value.title,150,'标题'),summary=text(value.summary,500,'摘要'),content=text(value.body,200000,'正文'),target=nullableId(value.branch_id)
-    if(!title)fail('请填写知识点标题');if(!['draft','published'].includes(value.status))fail('状态无效');if(value.status==='published'&&!content&&!value.images?.length)fail('发布前请填写正文或添加图片')
+    const title=text(value.title,150,'标题'),summary=text(value.summary,500,'摘要'),content=text(value.body,200000,'正文',false),target=nullableId(value.branch_id)
+    if(!title)fail('请填写知识点标题');if(!['draft','published'].includes(value.status))fail('状态无效');if(value.status==='published'&&!content.trim()&&!value.images?.length)fail('发布前请填写正文或添加图片')
     if(!Array.isArray(value.tags)||value.tags.length>12||value.tags.some(t=>typeof t!=='string'||t.length>30))fail('最多 12 个标签，每个不超过 30 字')
     liveBranch(target);return {title,summary,body:content,branch_id:target,status:value.status,images:validateImages(value.images),tags:JSON.stringify([...new Set(value.tags.map(t=>t.trim()).filter(Boolean))])}
   }

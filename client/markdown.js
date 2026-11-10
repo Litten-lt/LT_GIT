@@ -1,4 +1,4 @@
-import { marked } from 'marked'
+import { Marked } from 'marked'
 import DOMPurify from 'dompurify'
 
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
@@ -12,6 +12,19 @@ export function normalizeLegacy(source) {
     return line.replace(/<\/?notextile>/gi, '').replace(/\|_\.\s*/g, '| ').replace(/@([^@\n]+)@/g, '`$1`')
   }).join('\n')
 }
+
+const marked = new Marked({
+  extensions: [{
+    name: 'numberedParagraphBoundary',
+    level: 'block',
+    // Let the built-in list tokenizer handle a numbered line after prose.
+    start(source) {
+      const match = /\n(?= {0,3}\d{1,9}[.)][ \t]+\S)/.exec(source)
+      return match && match.index + 1
+    },
+    tokenizer() { return undefined }
+  }]
+})
 
 const renderer = new marked.Renderer()
 renderer.html = ({text}) => escape(text)

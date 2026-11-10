@@ -18,7 +18,7 @@ export function registerRecords(router,db,uploadDir){
     if(!Array.isArray(value)||value.length>10||value.some(id=>typeof id!=='string'||!db.prepare('SELECT id FROM images WHERE id=?').get(id)))error('图片无效或超过 10 张，请先上传图片')
     return JSON.stringify([...new Set(value)])
   }
-  const payload=body=>{if(typeof body?.body!=='string'||body.body.length>200000)error('记录正文需为文字，且不超过 20 万字');const images=validateImages(body.images??[]),content=body.body.trim();if(!content&&images==='[]')error('请填写记录内容或添加图片');return {body:content,images}}
+  const payload=body=>{if(typeof body?.body!=='string'||body.body.length>200000)error('记录正文需为文字，且不超过 20 万字');const images=validateImages(body.images??[]);if(!body.body.trim()&&images==='[]')error('请填写记录内容或添加图片');return {body:body.body,images}}
   const bump=id=>db.prepare('UPDATE notes SET updated_at=unixepoch() WHERE id=?').run(id)
   const uploader=multer({storage:multer.memoryStorage(),limits:{fileSize:5*1024*1024,files:5,fields:0}}).array('images',5)
   router.post('/api/images',(req,res,next)=>uploader(req,res,async err=>{

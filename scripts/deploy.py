@@ -57,6 +57,7 @@ try:
     run(f'sudo -n tar -czf {snapshot} -C /etc/nginx sites-available sites-enabled snippets && sudo -n chmod 600 {snapshot}')
     run(f'sudo -n install -m 644 {RELEASE}/deploy/nginx.conf {CONFIG} && sudo -n install -m 644 {RELEASE}/deploy/site.conf /etc/nginx/snippets/zhimu-site.conf && sudo -n install -d /var/www/zhimu-acme')
     run("sudo -n ln -sfn /etc/nginx/sites-available/zhimu /etc/nginx/sites-enabled/zhimu")
+    run("sudo -n install -d /etc/letsencrypt/renewal-hooks/deploy && printf '#!/bin/sh\nnginx -t && systemctl reload nginx\n' | sudo -n tee /etc/letsencrypt/renewal-hooks/deploy/zhimu-nginx >/dev/null && sudo -n chmod 755 /etc/letsencrypt/renewal-hooks/deploy/zhimu-nginx")
     try:
         run('sudo -n nginx -t && sudo -n systemctl reload nginx')
         run("curl -fsS http://127.0.0.1:3210/zhimu/api/health && curl -fsS http://127.0.0.1/zhimu/api/health && curl -fsSL http://127.0.0.1/ | head -c 200")
