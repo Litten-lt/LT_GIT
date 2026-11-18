@@ -45,3 +45,7 @@ body.visitor .tree-admin-tools,body.visitor .leaf-admin-tools{display:none!impor
 .site-header .header-replay{align-self:center;white-space:nowrap;font-size:11px}body.auth-screen .header-replay{display:none}@media(max-width:750px){.site-header nav{gap:12px}.site-header .header-replay{font-size:10px}}
 
 .site-header>.header-replay{margin-left:auto;flex-shrink:0}@media(max-width:750px){.site-header{flex-wrap:wrap;height:auto;min-height:78px;padding-top:16px;padding-bottom:16px;gap:14px}.site-header>.header-replay{font-size:10px}}
+
+.cover-copy .cover-chess { display:inline-block; margin:27px 4px 0; padding:14px 27px; border:1px solid #adb99b88; border-radius:30px; background:#edf2e2; color:#526f47; font-size:12px; letter-spacing:2px; }
+.cover-copy .cover-chess:hover { background:#e2eccf; }
+body.visitor [data-route=tree], body.visitor .header-replay { display:none; }

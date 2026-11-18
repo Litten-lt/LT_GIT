@@ -18,10 +18,11 @@ function toast(message){clearTimeout(toastTimer);$('toast').textContent=message;
 function navigate(v,extra={}){history.pushState(null,'',urlFor(v,extra));query='';branchFilter='';statusFilter='';page=0;selected=null;window.scrollTo(0,0);load()}
 async function load(){
   const token=++revision
-  document.body.classList.toggle('auth-screen',['login','account'].includes(view())||!sessionAdmin&&!['tree','read'].includes(view())||Boolean(sessionAdmin?.must_change))
+  document.body.classList.toggle('auth-screen',['login','account'].includes(view())||!sessionAdmin&&view()!=='tree'||Boolean(sessionAdmin?.must_change))
   root.setAttribute('aria-busy','true')
   try{
-    if(['login','account'].includes(view())||!sessionAdmin&&!['tree','read'].includes(view())||sessionAdmin?.must_change){root.innerHTML=authPage(sessionAdmin);return}
+    if(['login','account'].includes(view())||!sessionAdmin&&view()!=='tree'||sessionAdmin?.must_change){root.innerHTML=authPage(sessionAdmin);return}
+    if(!sessionAdmin){root.innerHTML='';showCover();return}
     if(view()==='read'){const [result,taxonomy]=await Promise.all([api('/notes/'+state().get('note')),api('/branches')]);if(token!==revision)return;branches=taxonomy.branches;renderRead(result.note);return}
     const isTree=view()==='tree',trash=view()==='trash'
     if(isTree){const result=await api('/tree');if(token!==revision)return;branches=result.branches;notes=result.notes;if(selected){const n=notes.find(n=>n.id===selected);if(n){const siblings=notes.filter(x=>x.branch_id===n.branch_id).sort((a,b)=>a.id-b.id);page=Math.max(0,Math.floor(siblings.findIndex(x=>x.id===selected)/10))}}}
@@ -138,12 +139,12 @@ window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();
 window.addEventListener('popstate',()=>{query='';page=0;selected=Number(state().get('leaf'))||null;load()})
 function showCover(force=false){
   if($('cover'))return;if(!force&&view()!=='tree')return
-  const cover=document.createElement('section');cover.id='cover';cover.setAttribute('aria-label','知木封面');cover.innerHTML=coverAccount(sessionAdmin)+'<div class="cover-copy"><span class="eyebrow">EVERY IDEA STARTS WITH A SEED</span><h2>知木</h2><p>把每一次理解，长成一片叶子。</p><button id="enter-tree">让知识生长 ↗</button></div><div class="horizon"></div><div class="seed"></div><div class="cover-caption">ZHIMU</div><div id="phase" aria-live="polite"></div><button id="skip-intro" hidden>跳过动画 →</button>'
+  const cover=document.createElement('section');cover.id='cover';cover.setAttribute('aria-label','知木封面');cover.innerHTML=coverAccount(sessionAdmin)+'<div class="cover-copy"><span class="eyebrow">EVERY IDEA STARTS WITH A SEED</span><h2>知木</h2><p>把每一次理解，长成一片叶子。</p>'+(sessionAdmin?'<button id="enter-tree">让知识生长 ↗</button>':'')+'<a class="cover-chess" href="./chess.html">棋牌室 ↗</a></div><div class="horizon"></div><div class="seed"></div><div class="cover-caption">ZHIMU</div><div id="phase" aria-live="polite"></div><button id="skip-intro" hidden>跳过动画 →</button>'
   document.body.append(cover);root.inert=true;root.style.opacity='0';const previousOverflow=document.body.style.overflow;document.body.style.overflow='hidden'
   let clone,animations=[],timers=[]
   const finish=()=>{clearTimeout(coverTimer);timers.forEach(clearTimeout);animations.forEach(a=>a.cancel());clone?.remove();cover.remove();if(state().has('cover')){const params=state();params.delete('cover');history.replaceState(null,'','?'+params)};document.body.style.overflow=previousOverflow;root.inert=false;root.style.opacity='1';try{sessionStorage.setItem('zhimu:opened','1')}catch{}}
   $('skip-intro').onclick=finish
-  $('enter-tree').onclick=()=>{
+  if($('enter-tree'))$('enter-tree').onclick=()=>{
     if(matchMedia('(prefers-reduced-motion:reduce)').matches){finish();return}
     const actual=$('knowledge-tree');if(!actual){finish();return}
     try{

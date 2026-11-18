@@ -1,4 +1,5 @@
 import {registerAuth} from './auth.js'
+import {registerChess} from './chess.js'
 import express from 'express'
 import { registerRecords } from './records.js'
 import Database from 'better-sqlite3'
@@ -33,6 +34,7 @@ export function createApp({filename=':memory:',basePath='',secureCookies=false,b
   app.use((req,res,next)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'");next()})
   router.use('/api',(req,res,next)=>{res.setHeader('Cache-Control','no-store');if(!['GET','HEAD'].includes(req.method)&&req.get('origin')){try{if(new URL(req.get('origin')).host!==req.get('host'))return res.status(403).json({error:'请从本站管理界面提交修改'})}catch{return res.status(403).json({error:'来源无效'})}}next()})
   router.use(express.json({limit:'600kb'}))
+  registerChess(router,db,{basePath,secureCookies})
   registerAuth(router,db,{basePath,secureCookies,backupFile})
   const {validateImages,recordsFor,draftFor}=registerRecords(router,db,uploadDir)
   const branch=id=>db.prepare('SELECT * FROM branches WHERE id=?').get(id)

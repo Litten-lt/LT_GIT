@@ -58,9 +58,9 @@ export function registerAuth(router,db,{basePath='',secureCookies=false,backupFi
     }catch(e){next(e)}
   })
   router.use('/api',(req,res,next)=>{
-    if(!['GET','HEAD'].includes(req.method)&&!req.admin)return res.status(401).json({error:'请先登录管理员账号'})
+    if(req.path==='/health'&&['GET','HEAD'].includes(req.method))return next()
+    if(!req.admin)return res.status(401).json({error:'请先登录管理员账号'})
     if(req.admin?.must_change&&!['GET','HEAD'].includes(req.method))return res.status(403).json({error:'请先修改初始密码'})
-    if(!req.admin&&(req.query.trash==='1'||req.query.status==='draft'))return res.status(403).json({error:'仅管理员可查看草稿和回收站'})
     next()
   })
 }

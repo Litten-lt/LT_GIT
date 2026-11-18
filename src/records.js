@@ -34,7 +34,7 @@ export function registerRecords(router,db,uploadDir){
       res.status(201).json({images})
     }catch(e){for(const id of written)fs.rmSync(path.join(uploadDir,id),{force:true});next(e)}
   }))
-  router.get('/media/:id',wrap((req,res)=>{if(!req.admin&&!db.prepare("SELECT 1 FROM notes n WHERE n.status='published' AND n.deleted_at IS NULL AND (EXISTS(SELECT 1 FROM json_each(n.images) WHERE value=?) OR EXISTS(SELECT 1 FROM records r,json_each(r.images) i WHERE r.note_id=n.id AND r.deleted_at IS NULL AND i.value=?))").get(req.params.id,req.params.id))error('图片不存在',404);const image=db.prepare('SELECT * FROM images WHERE id=?').get(req.params.id);if(!image)error('图片不存在',404);res.type(image.mime).set('Cache-Control','public, max-age=86400').sendFile(path.join(uploadDir,image.id))}))
+  router.get('/media/:id',wrap((req,res)=>{res.set('Cache-Control','private, no-store');if(!req.admin)error('图片不存在',404);const image=db.prepare('SELECT * FROM images WHERE id=?').get(req.params.id);if(!image)error('图片不存在',404);res.type(image.mime).sendFile(path.join(uploadDir,image.id))}))
   const read=row=>({...row,images:JSON.parse(row.images)})
   const recordsFor=id=>db.prepare('SELECT * FROM records WHERE note_id=? AND deleted_at IS NULL ORDER BY created_at,id').all(id).map(read)
   const draftFor=id=>{const row=db.prepare('SELECT * FROM record_drafts WHERE note_id=?').get(id);return row?read(row):null}

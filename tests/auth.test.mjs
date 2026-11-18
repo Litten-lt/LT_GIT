@@ -15,23 +15,75 @@ async function setup(t,options={}){
   const login=async()=>{const r=await request('/api/auth/login','POST',{username:'allen',password:'a-good-test-password'});assert.equal(r.status,200);return r.headers.get('set-cookie').split(';')[0]}
   return {db,request,login}
 }
-test('visitors read published knowledge only; all mutations and private attachments require admin',async t=>{
+test('all knowledge and attachments require admin, including published content',async t=>{
   const {db,request,login}=await setup(t),cookie=await login()
   const published=Number(db.prepare("INSERT INTO notes(title,body,status) VALUES('public','body','published')").run().lastInsertRowid)
   const draft=Number(db.prepare("INSERT INTO notes(title,body,status,images) VALUES('secret','private','draft','[\"secret.png\"]')").run().lastInsertRowid)
   db.prepare("INSERT INTO images(id,mime) VALUES('secret.png','image/png')").run()
   db.prepare("INSERT INTO record_drafts(note_id,body) VALUES(?,'private draft')").run(published)
-  assert.equal((await request('/api/tree')).status,200)
-  assert.equal((await (await request('/api/notes')).json()).notes.length,1)
-  assert.equal((await request('/api/notes/'+draft)).status,404)
-  assert.equal((await (await request('/api/notes/'+published)).json()).note.record_draft,null)
+  for(const route of ['/api/tree','/api/branches','/api/notes','/api/notes/'+draft,'/api/notes/'+published]){
+    assert.equal((await request(route)).status,401)
+  }
+  assert.equal((await request('/api/tree','GET',null,cookie)).status,200)
   assert.equal((await request('/media/secret.png')).status,404)
-  assert.equal((await request('/api/notes?trash=1')).status,403)
+  assert.equal((await request('/api/notes?trash=1')).status,401)
   for(const route of ['/api/notes','/api/branches','/api/images','/api/notes/'+published+'/records','/api/notes/'+published+'/restore'])assert.equal((await request(route,'POST',{})).status,401)
   assert.equal((await request('/api/notes/'+published,'DELETE')).status,401)
   assert.equal((await request('/api/notes/'+draft,'GET',null,cookie)).status,200)
   assert.equal((await request('/api/branches','POST',{name:'test'},cookie)).status,201)
   assert.equal((await request('/api/branches','POST',{name:'bad'},cookie,{Origin:'https://attacker.invalid'})).status,403)
+})
+test('chess guests can create and join rooms but cannot access notes',async t=>{
+  const {db,request}=await setup(t,{basePath:'/zhimu'})
+  assert.equal((await request('/chess.html')).status,200)
+  const created=await request('/api/chess/rooms','POST',{name:'周末桌',game:'mahjong',rule:'长沙麻将',password:'room-test'})
+  assert.equal(created.status,201)
+  const {roomId}=await created.json()
+  const header=created.headers.get('set-cookie')
+  assert.match(header,/HttpOnly/)
+  assert.match(header,/Path=\/zhimu\/api\/chess/)
+  const cookie=header.split(';')[0], join='/api/chess/rooms/'+roomId+'/join'
+  assert.equal((await request('/api/tree','GET',null,cookie)).status,401)
+  assert.equal((await request(join,'POST',{password:'room-test'},cookie)).status,200)
+  assert.equal((await request(join,'POST',{})).status,403)
+  assert.equal((await request(join,'POST',{password:'wrong'})).status,403)
+  const results=await Promise.all(Array.from({length:4},()=>request(join,'POST',{password:'room-test'})))
+  assert.deepEqual(results.map(r=>r.status).sort(),[200,200,200,409])
+  const lobby=async(cookie='')=>(await request('/api/chess','GET',null,cookie)).json()
+  const [{members,...listed}]=(await lobby(cookie)).rooms
+  assert.deepEqual(listed,{id:roomId,name:'周末桌',rule:'长沙麻将',game:'麻将',players:4,capacity:4})
+  assert.equal(members[0].name,(await lobby(cookie)).playerNumber)
+  assert.equal(members.length,4)
+  assert.equal((await lobby(cookie)).roomId,roomId)
+  await request('/api/chess/leave','POST',{},cookie)
+  assert.equal((await lobby(cookie)).roomId,null)
+  assert.equal((await lobby()).rooms[0].players,3)
+  db.prepare('UPDATE chess_seats SET seen_at=unixepoch()-301').run()
+  assert.deepEqual((await lobby()).rooms,[])
+})
+test('chess nicknames persist and only the current owner can kick room members',async t=>{
+  const {request}=await setup(t)
+  const cookieOf=response=>response.headers.get('set-cookie').split(';')[0]
+  const owner=cookieOf(await request('/api/chess/name','POST',{name:'东风'}))
+  const guest=cookieOf(await request('/api/chess/name','POST',{name:'南风'}))
+  const room=(await (await request('/api/chess/rooms','POST',{name:'好友桌',game:'mahjong',rule:'红中麻将',password:'room-test'},owner)).json()).roomId
+  const join='/api/chess/rooms/'+room+'/join'
+  await request(join,'POST',{password:'room-test'},guest)
+  const lobby=async cookie=>(await (await request('/api/chess','GET',null,cookie)).json())
+  const leader=await lobby(owner),member=await lobby(guest)
+  assert.equal(leader.isOwner,true)
+  assert.equal(member.isOwner,false)
+  assert.deepEqual(member.rooms[0].members.map(player=>player.name),['东风','南风'])
+  assert.ok(member.rooms[0].members.every(player=>!player.id))
+  assert.ok((await lobby('')).rooms[0].members.every(player=>!player.id))
+  const kick='/api/chess/rooms/'+room+'/kick/'+leader.rooms[0].members[1].id
+  assert.equal((await request(kick,'POST',{},guest)).status,403)
+  assert.equal((await request(kick,'POST',{},owner)).status,200)
+  assert.equal((await lobby(guest)).roomId,null)
+  assert.equal((await lobby(guest)).name,'南风')
+  await request(join,'POST',{password:'room-test'},guest)
+  await request('/api/chess/leave','POST',{},owner)
+  assert.equal((await lobby(guest)).isOwner,true)
 })
 test('password change revokes all sessions, logout revokes its session, and repeated login failures are limited',async t=>{
   const {request,login}=await setup(t),a=await login(),b=await login()

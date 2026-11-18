@@ -1,0 +1,23 @@
+.chess-lobby { max-width: 820px; margin: 0 auto; padding: 3rem 1rem; }
+.chess-lobby h1 { margin-block: 1rem 2rem; }
+.chess-heading, .chess-actions, .chess-room { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.chess-heading { justify-content: space-between; }
+#nickname[hidden] { display: none; }
+.chess-room { background: #f8f9f1; border: 1px solid #ccd5bf; border-radius: 14px; padding: 1rem; }
+dialog.chess-dialog { width: min(420px, 92vw); padding: 1.25rem; }
+.chess-dialog h2 { margin: 0; }
+.chess-dialog form, .chess-dialog label { display: grid; gap: .45rem; }
+.chess-dialog form { gap: .85rem; }
+.chess-dialog .chess-actions { justify-content: flex-end; }
+.chess-lobby button { cursor: pointer; }
+.chess-lobby button:disabled { cursor: default; opacity: .65; }
+#rooms { list-style: none; padding: 0; display: grid; gap: .65rem; }
+.chess-room { align-items: center; overflow-wrap: anywhere; }
+.chess-room .room-details { flex: 1 1 12rem; min-width: 0; }
+.chess-room p { margin: .25rem 0 0; }
+.chess-room a { text-decoration: underline; }
+.chess-room:target { outline: 2px solid #567146; }
+.room-members { flex-basis: 100%; list-style: none; margin: 0; padding: .5rem 0 0; border-top: 1px solid var(--line); }
+.room-members li { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding-block: .3rem; }
+.room-members small { color: var(--muted); }
+.room-members button { padding: .3rem .65rem; }

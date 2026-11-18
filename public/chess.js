@@ -1,0 +1,171 @@
+const byId = id => document.getElementById(id)
+const form = byId('create-room')
+const profile = byId('player-name')
+const join = byId('join-room')
+const nickname = byId('nickname')
+const newRoom = byId('new-room')
+const list = byId('rooms')
+const status = byId('chess-status')
+let busy = false
+let pendingPoll
+let state
+
+async function request(path = '', body) {
+  const response = await fetch('./api/chess' + path, body === undefined ? {} : {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+  })
+  const result = await response.json()
+  if (!response.ok) throw new Error(result.error)
+  return result
+}
+
+function button(label, onClick, disabled = false, style = 'primary') {
+  const element = document.createElement('button')
+  element.className = style
+  element.textContent = label
+  element.onclick = onClick
+  element.disabled = disabled
+  return element
+}
+
+function openForm(form, title) {
+  form.reset()
+  if (title) form.querySelector('h2').textContent = title
+  form.querySelector('.dialog-message').textContent = ''
+  form.closest('dialog').showModal()
+}
+
+function render() {
+  if (!form.elements.rule.options.length) {
+    for (const rule of state.rules) form.elements.rule.add(new Option(rule, rule))
+  }
+  newRoom.disabled = Boolean(state.roomId)
+  nickname.hidden = !state.playerNumber
+  nickname.textContent = state.name || state.playerNumber
+  list.replaceChildren()
+  if (!state.rooms.length) {
+    const empty = document.createElement('li')
+    empty.textContent = '大厅暂无房间，可以先创建一间。'
+    list.append(empty)
+  }
+  for (const room of state.rooms) {
+    const entry = document.createElement('li')
+    entry.className = 'chess-room'
+    entry.id = room.id
+    const details = document.createElement('div')
+    details.className = 'room-details'
+    const name = document.createElement('strong')
+    name.textContent = room.name
+    const summary = document.createElement('p')
+    summary.textContent = [room.game, room.rule, room.players + '/' + room.capacity].join(' · ')
+    details.append(name, summary)
+    const ownRoom = state.roomId === room.id
+    const full = room.players >= room.capacity
+    const actions = document.createElement('div')
+    actions.className = 'chess-actions'
+    if (ownRoom) {
+      if (state.isOwner) actions.append(button('开始游戏', () => {
+        status.textContent = '游戏功能开发中，房间仍可继续使用。'
+      }, !full))
+      actions.append(button('离开房间', () => act('/leave', {}, '已离开房间'), false, 'outline-button'))
+    } else {
+      actions.append(button(full ? '已满' : '加入房间', () => {
+        join.dataset.room = room.id
+        openForm(join, '加入「' + room.name + '」')
+      }, full || Boolean(state.roomId)))
+    }
+    const link = document.createElement('a')
+    link.href = '#' + room.id
+    link.textContent = '房间链接'
+    actions.append(link)
+    const members = document.createElement('ul')
+    members.className = 'room-members'
+    members.setAttribute('aria-label', '房间成员')
+    for (const player of room.members) {
+      const row = document.createElement('li')
+      const label = document.createElement('span')
+      label.textContent = player.name + (player.owner ? ' · 房主' : '') + (player.self ? ' · 你' : '')
+      row.append(label)
+      if (player.id) {
+        const id = document.createElement('small')
+        id.textContent = '玩家 ' + player.id.slice(0, 8)
+        row.append(id)
+        if (!player.self) row.append(button('移出房间', () => {
+          if (confirm('将「' + player.name + '」移出房间？')) {
+            act('/rooms/' + room.id + '/kick/' + player.id, {}, '已移出玩家')
+          }
+        }, false, 'outline-button'))
+      }
+      members.append(row)
+    }
+    entry.append(details, actions, members)
+    list.append(entry)
+  }
+}
+
+async function refresh() {
+  if (state?.roomId || !state) await request('/presence', {})
+  const next = await request()
+  const changed = JSON.stringify(state) !== JSON.stringify(next)
+  if (state?.roomId && !next.roomId) status.textContent = '你已离开原房间。'
+  state = next
+  if (changed) render()
+}
+
+async function act(path, body, message, activeForm) {
+  if (busy) return
+  busy = true
+  try {
+    await pendingPoll
+    await request(path, body)
+    if (activeForm) {
+      activeForm.closest('dialog').close()
+      activeForm.reset()
+    }
+    await refresh()
+    status.textContent = message
+  } catch (error) {
+    const alert = activeForm?.closest('dialog').open ? activeForm.querySelector('.dialog-message') : status
+    alert.textContent = error.message
+  } finally {
+    busy = false
+  }
+}
+
+newRoom.onclick = () => openForm(form)
+nickname.onclick = () => {
+  openForm(profile)
+  profile.elements.name.value = state.name || state.playerNumber
+  profile.elements.name.select()
+}
+for (const cancel of document.querySelectorAll('[data-close]')) {
+  cancel.onclick = () => cancel.closest('dialog').close()
+}
+for (const [element, path, message] of [
+  [form, () => '/rooms', '房间已创建，你已入座'],
+  [join, () => '/rooms/' + join.dataset.room + '/join', '已入座'],
+  [profile, () => '/name', '昵称已保存']
+]) {
+  element.onsubmit = event => {
+    event.preventDefault()
+    act(path(), Object.fromEntries(new FormData(element)), message, element)
+  }
+}
+
+async function poll() {
+  if (busy) return
+  try {
+    await refresh()
+    if (status.dataset.pollError || status.textContent === '正在加载房间…') status.textContent = ''
+    delete status.dataset.pollError
+  } catch {
+    status.textContent = '房间暂时无法加载，正在重试。'
+    status.dataset.pollError = '1'
+  }
+}
+
+await poll()
+document.getElementById(location.hash.slice(1))?.scrollIntoView()
+setInterval(() => {
+  if (!busy && !pendingPoll) pendingPoll = poll().finally(() => { pendingPoll = undefined })
+}, 5000)
