@@ -56,6 +56,7 @@ test('pong transfers the turn, added and closed kongs draw a tile, red cannot be
 test('self-draw settles once; an exhausted wall settles as a draw', () => {
   const match = newMatch(humans, tileSet(), 0)
   match.hands[0] = [0,1,2,3,4,5,9,10,11,18,18,18,24,24]
+  match.wall = [1,2,3,5,6,7]
   move(match,0,'win')
   assert.deepEqual(match.scores,[6,-2,-2,-2])
   assert.equal(play(match,0,{type:'win'}),false)
@@ -88,11 +89,37 @@ test('a human and three robots finish full seeded games with all tiles accounted
       assert.ok(play(match,0,choice))
       advance(match)
       const meldTiles = match.melds.flat().flatMap(meld=>Array(meld.type==='pong'?3:4).fill(meld.tile))
-      assert.deepEqual([...match.wall,...match.hands.flat(),...match.discards.flat(),...meldTiles].sort((a,b)=>a-b),tileSet())
+      assert.deepEqual([...match.wall,...match.hands.flat(),...match.discards.flat(),...meldTiles,...(match.settlement?.marks ?? [])].sort((a,b)=>a-b),tileSet())
     }
     assert.equal(match.phase,'ended')
     assert.equal(match.scores.reduce((a,b)=>a+b),0)
   }
+})
+
+test('flying then winning clean doubles the base and markers; next round inherits scores and winner', () => {
+  const match = newMatch(humans, tileSet(), 2)
+  const clean = [0,1,2,3,4,5,9,10,11,18,18,18,24,24]
+  match.hands[2] = [...clean.slice(0, -1), RED]
+  match.wall = [1,2,3,5,0,RED]
+  assert.ok(legalMoves(match,2).some(move=>move.type==='fly'))
+  move(match,2,'fly',RED)
+  assert.equal(match.discards[2].at(-1),RED)
+  assert.equal(match.phase,'turn')
+  match.turn = 2
+  match.hands[2] = clean
+  match.wall = [1,2,3,5,0,RED]
+  move(match,2,'win')
+  assert.equal(match.settlement.clean,true)
+  assert.equal(match.settlement.marks.length,6)
+  assert.equal(match.settlement.multiplier,2)
+  assert.deepEqual(match.scores,[-12,-12,36,-12])
+  const next = newMatch(humans,tileSet(),0,match)
+  assert.equal(next.dealer,2)
+  assert.equal(next.round,2)
+  assert.deepEqual(next.totals,match.scores)
+  assert.deepEqual(next.scores,[0,0,0,0])
+  const draw = newMatch(humans,tileSet(),0,{...next,winner:null,phase:'ended'})
+  assert.equal(draw.dealer,2)
 })
 
 test('robot actions are paced, visible in order and stop for a human claim', () => {

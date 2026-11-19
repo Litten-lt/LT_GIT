@@ -3,7 +3,7 @@ const room = new URLSearchParams(location.search).get('room')
 const endpoint = './api/chess/rooms/' + encodeURIComponent(room || '') + '/match'
 const svgNamespace = 'http://www.w3.org/2000/svg'
 const numbers = '一二三四五六七八九'
-const labels = {pong: '碰', openKong: '明杠', closedKong: '暗杠', addedKong: '补杠', win: '胡', pass: '过'}
+const labels = {pong: '碰', openKong: '明杠', closedKong: '暗杠', addedKong: '补杠', win: '胡', pass: '过', fly: '飞红中'}
 const positions = [
   [[0,0]], [[-.72,-1],[.72,1]], [[-.85,-1.25],[0,0],[.85,1.25]],
   [[-1,-1],[1,-1],[-1,1],[1,1]], [[-1,-1],[1,-1],[0,0],[-1,1],[1,1]],
@@ -126,7 +126,7 @@ function drawSeat(relative) {
   const title = player.name + (relative === 0 ? ' · 你' : '') + (seat === state.dealer ? ' · 庄' : '')
   const acting = state.events.at(-1)?.seat === seat
   section.append(node('span', 'seat-title' + (state.turn === seat && state.phase !== 'ended' ? ' current' : '') + (acting ? ' acting' : ''), title))
-  section.append(node('p', 'score', (state.scores[seat] > 0 ? '+' : '') + state.scores[seat] + ' 分'))
+  section.append(node('p', 'score', state.totals[seat] + ' 分'))
   if (relative) {
     const backs = node('div', 'backs')
     backs.setAttribute('aria-label', player.count + ' 张手牌')
@@ -199,7 +199,7 @@ function renderHand(discards, animateDraw) {
 }
 
 function render(animateDraw) {
-  get('remaining').textContent = '剩余 ' + state.remaining
+  get('remaining').textContent = '第 ' + state.round + ' 局 · 剩余 ' + state.remaining
   get('felt').replaceChildren(...[2, 3, 1, 0].map(drawSeat))
   const over = state.phase === 'ended'
   updateCountdown()
@@ -225,12 +225,44 @@ function render(animateDraw) {
   const result = get('result')
   result.hidden = !over
   if (over) {
-    const title = state.winner === null ? '流局' : state.players[state.winner].name + ' 自摸'
+    const settlement = state.settlement
+    const title = state.winner === null ? '流局' : state.players[state.winner].name + (settlement?.clean ? ' 清胡' : ' 自摸')
     const winning = node('div', 'discards')
     for (const value of state.winningHand ?? []) winning.append(tile(value))
+    if (state.winner !== null) for (const meld of state.melds[state.winner]) {
+      for (let i = 0; i < (meld.type === 'pong' ? 3 : 4); i++) winning.append(tile(meld.tile))
+    }
     const back = node('a', '', '返回房间')
     back.href = './chess.html#' + room
-    result.replaceChildren(node('h2', '', title), winning, back)
+    result.replaceChildren(node('h2', '', title), winning)
+    if (settlement?.marks.length) {
+      const marks = node('div', 'discards')
+      settlement.marks.forEach((value, index) => marks.append(tile(value, settlement.hits[index] ? 'latest' : '')))
+      result.append(node('p', '', '翻码 ' + settlement.marks.length + ' 张 · 中 ' + settlement.hits.filter(Boolean).length +
+        ' 码' + (settlement.multiplier === 2 ? ' · 飞红中 ×2' : '') + ' · 每家付 ' + settlement.payment + ' 分'), marks)
+    }
+    const scores = node('ul', 'round-scores')
+    state.players.forEach((player, index) => scores.append(node('li', '', player.name + ' · 本局 ' +
+      (state.scores[index] > 0 ? '+' : '') + state.scores[index] + ' · 累计 ' + state.totals[index])))
+    result.append(scores, back)
+    if (state.isOwner) {
+      const next = node('button', '', '下一局')
+      next.onclick = async () => {
+        if (busy) return
+        busy = true
+        next.disabled = true
+        try {
+          await pendingPoll
+          const response = await fetch(endpoint.replace(/match$/, 'start'), {method: 'POST'})
+          if (!response.ok) throw new Error((await response.json()).error)
+          await sync()
+        } catch (error) {
+          result.append(node('p', '', error.message))
+          next.disabled = false
+        } finally { busy = false }
+      }
+      result.append(next)
+    } else result.append(node('p', '', '等待房主开始下一局'))
   }
 }
 
@@ -245,7 +277,7 @@ function showEvent(event) {
 
 function queueVoice(event) {
   if (!audioEnabled) return
-  const key = event.type === 'discard' ? event.tile : event.type.endsWith('Kong') ? 'kong' : event.type
+  const key = event.type === 'discard' || event.type === 'fly' ? event.tile : event.type.endsWith('Kong') ? 'kong' : event.type
   if (!clips.has(key)) clips.set(key, fetch('./mahjong-audio/' + key + '.wav').then(async response => {
     if (!response.ok) throw new Error('语音文件读取失败')
     return audioContext.decodeAudioData(await response.arrayBuffer())

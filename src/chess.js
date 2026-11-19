@@ -218,7 +218,7 @@ export function registerChess(router, db, {basePath, secureCookies}) {
         if (members.length !== capacity) fail(409, '需要四人入座才可开局')
         const match = newMatch(members.map(member => ({
           id: member.player_id, name: member.name ?? member.player_id.slice(0, 8), bot: isBot(member.player_id)
-        })))
+        })), undefined, undefined, record ? JSON.parse(record.state) : undefined)
         save(roomId, match)
         return tableView(match, playerId)
       }
@@ -239,7 +239,7 @@ export function registerChess(router, db, {basePath, secureCookies}) {
       return tableView(match, playerId)
     }).immediate()
     if (data.stale) return res.status(409).json({error: '牌局已更新，请查看最新牌面'})
-    res.json(data)
+    res.json({...data, isOwner: ownerOf.get(req.params.id)?.player_id === findPlayer(req)})
   }
   router.post('/api/chess/rooms/:id/bots', (req,res) => table(req,res,'bot'))
   router.post('/api/chess/rooms/:id/start', (req,res) => table(req,res,'start'))

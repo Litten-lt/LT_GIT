@@ -72,10 +72,17 @@ function announce(match, type, seat, tile) {
   if (events.length > 24) events.shift()
 }
 
-export function newMatch(players, wall = shuffle(tileSet()), dealer = randomInt(4)) {
+export function newMatch(players, wall = shuffle(tileSet()), dealer = randomInt(4), previous) {
   wall = wall.slice()
+  const sameTable = previous && players.every(player => previous.players.some(old => old.id === player.id))
+  const totals = sameTable ? players.map(player => {
+    const seat = previous.players.findIndex(old => old.id === player.id)
+    return (previous.totals?.[seat] ?? 0) + previous.scores[seat]
+  }) : players.map(() => 0)
+  if (sameTable) dealer = players.findIndex(player => player.id === previous.players[previous.winner ?? previous.dealer].id)
   const match = {
-    id: randomUUID(), version: 0, rule: 'gd-red-1', players, dealer, turn: dealer, wall,
+    id: randomUUID(), version: 0, rule: 'gd-red-2', players, dealer, turn: dealer, wall, totals,
+    round: sameTable ? (previous.round ?? 1) + 1 : 1, flown: [],
     hands: players.map(() => sort(wall.splice(0, 13))), melds: players.map(() => []),
     discards: players.map(() => []), scores: players.map(() => 0), phase: 'turn',
     events: [], botAt: now() + BOT_DELAY
@@ -91,7 +98,13 @@ function finish(match, winner = null) {
   match.winner = winner
   if (winner === null) announce(match, 'draw')
   if (winner !== null) {
-    for (let seat = 0; seat < 4; seat++) match.scores[seat] += seat === winner ? 6 : -2
+    const clean = !match.hands[winner].includes(RED)
+    const multiplier = match.flown?.includes(winner) ? 2 : 1
+    const marks = match.rule === 'gd-red-2' ? match.wall.splice(-Math.min(match.wall.length, clean ? 6 : 4)).reverse() : []
+    const hits = marks.map(tile => tile === RED || [0, 4, 8].includes(tile % 9))
+    const payment = (2 + hits.filter(Boolean).length * 2) * multiplier
+    match.settlement = {clean, multiplier, marks, hits, payment}
+    for (let seat = 0; seat < 4; seat++) match.scores[seat] += seat === winner ? payment * 3 : -payment
   }
 }
 
@@ -115,7 +128,10 @@ export function legalMoves(match, seat) {
   const hand = match.hands[seat]
   const moves = [...new Set(hand)].map(tile => ({type: 'discard', tile}))
   if (match.drawn === null) return moves
-  if (canWin(hand, match.melds[seat].length)) moves.push({type: 'win'})
+  if (canWin(hand, match.melds[seat].length)) {
+    moves.push({type: 'win'})
+    if (match.rule === 'gd-red-2' && hand.includes(RED) && !match.flown.includes(seat) && match.wall.length) moves.push({type: 'fly', tile: RED})
+  }
   if (match.wall.length) {
     for (const tile of new Set(hand)) {
       if (tile === RED) continue
@@ -184,6 +200,7 @@ export function play(match, seat, move) {
     announce(match, type, seat, type === 'closedKong' ? undefined : tile)
     draw(match, seat, true)
   } else {
+    if (type === 'fly') match.flown.push(seat)
     take(match.hands[seat], tile, 1)
     sort(match.hands[seat])
     match.discards[seat].push(tile)
@@ -247,9 +264,11 @@ export function tableView(match, playerId) {
   const {id, version, dealer, turn, phase, scores, winner, discards, lastDiscard, deadline} = match
   return {
     id, version, seat, dealer, turn, phase, scores, winner, discards, lastDiscard, deadline,
+    round: match.round ?? 1, totals: scores.map((score, index) => (match.totals?.[index] ?? 0) + score),
+    settlement: phase === 'ended' ? match.settlement : undefined,
     players: match.players.map((player, index) => ({name: player.name, bot: player.bot, count: match.hands[index].length})),
     melds: match.melds.map((melds, index) => melds.map(meld => ({
-      ...meld, tile: meld.type === 'closedKong' && index !== seat ? null : meld.tile
+      ...meld, tile: meld.type === 'closedKong' && index !== seat && !(phase === 'ended' && winner === index) ? null : meld.tile
     }))),
     remaining: match.wall.length,
     hand: match.hands[seat], events: match.events ?? [],

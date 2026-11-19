@@ -122,7 +122,11 @@ test('room owner starts a bot match, refreshes it, plays a full round and can st
   }
   assert.equal(state.phase,'ended')
   assert.equal(state.scores.reduce((sum,score)=>sum+score,0),0)
-  assert.notEqual((await (await post('/start')).json()).id,first.id)
+  const next=await (await post('/start')).json()
+  assert.notEqual(next.id,first.id)
+  assert.equal(next.round,2)
+  assert.equal(next.dealer,state.winner ?? state.dealer)
+  assert.deepEqual(next.totals,state.totals)
 })
 test('password change revokes all sessions, logout revokes its session, and repeated login failures are limited',async t=>{
   const {request,login}=await setup(t),a=await login(),b=await login()
