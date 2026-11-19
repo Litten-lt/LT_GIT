@@ -85,6 +85,45 @@ test('chess nicknames persist and only the current owner can kick room members',
   await request('/api/chess/leave','POST',{},owner)
   assert.equal((await lobby(guest)).isOwner,true)
 })
+test('room owner starts a bot match, refreshes it, plays a full round and can start again',async t=>{
+  const {db,request}=await setup(t)
+  const created=await request('/api/chess/rooms','POST',{name:'练习桌',game:'mahjong',rule:'红中麻将',password:'room-test'})
+  const cookie=created.headers.get('set-cookie').split(';')[0]
+  const roomId=(await created.json()).roomId
+  const base='/api/chess/rooms/'+roomId
+  const post=(path,body={})=>request(base+path,'POST',body,cookie)
+  assert.equal((await post('/start')).status,409)
+  for(let i=0;i<3;i++)assert.equal((await post('/bots')).status,200)
+  const first=await (await post('/start')).json()
+  assert.equal((await request(base+'/match')).status,403)
+  assert.equal((await (await post('/start')).json()).id,first.id)
+  let state=await (await request(base+'/match','GET',null,cookie)).json()
+  assert.equal(state.id,first.id)
+  assert.equal(state.players.filter(player=>player.bot).length,3)
+  assert.equal(state.hands,undefined)
+  assert.equal(state.wall,undefined)
+  if(state.phase!=='ended'){
+    const rejected=await post('/match',{id:state.id,version:state.version-1,move:state.moves[0]})
+    assert.equal(rejected.status,409)
+  }
+  for(let i=0;state.phase!=='ended'&&i<120;i++){
+    if(!state.moves.length){
+      db.prepare("UPDATE chess_matches SET state=json_set(state,'$.botAt',0) WHERE room_id=?").run(roomId)
+      const next=await (await request(base+'/match','GET',null,cookie)).json()
+      assert.equal(next.version,state.version+1)
+      state=next
+      continue
+    }
+    const move=state.moves.find(option=>option.type==='win')??state.moves[0]
+    assert.ok(move)
+    const response=await post('/match',{id:state.id,version:state.version,move})
+    assert.equal(response.status,200)
+    state=await response.json()
+  }
+  assert.equal(state.phase,'ended')
+  assert.equal(state.scores.reduce((sum,score)=>sum+score,0),0)
+  assert.notEqual((await (await post('/start')).json()).id,first.id)
+})
 test('password change revokes all sessions, logout revokes its session, and repeated login failures are limited',async t=>{
   const {request,login}=await setup(t),a=await login(),b=await login()
   assert.equal((await request('/api/auth/password','POST',{current_password:'a-good-test-password',password:'a-better-test-password'},a)).status,200)

@@ -64,15 +64,18 @@ function render() {
     const actions = document.createElement('div')
     actions.className = 'chess-actions'
     if (ownRoom) {
-      if (state.isOwner) actions.append(button('开始游戏', () => {
-        status.textContent = '游戏功能开发中，房间仍可继续使用。'
-      }, !full))
+      const table = './mahjong.html?' + new URLSearchParams({room: room.id})
+      if (room.hasMatch) actions.append(button(room.playing ? '回到牌桌' : '查看上局', () => { location.href = table }))
+      if (state.isOwner && room.rule === '红中麻将' && !room.playing) {
+        if (!full) actions.append(button('添加机器人', () => act('/rooms/' + room.id + '/bots', {}, '已添加机器人'), false, 'outline-button'))
+        actions.append(button('开始游戏', () => act('/rooms/' + room.id + '/start', {}, '已开局', null, table), !full))
+      }
       actions.append(button('离开房间', () => act('/leave', {}, '已离开房间'), false, 'outline-button'))
     } else {
-      actions.append(button(full ? '已满' : '加入房间', () => {
+      actions.append(button(room.playing ? '对局中' : full ? '已满' : '加入房间', () => {
         join.dataset.room = room.id
         openForm(join, '加入「' + room.name + '」')
-      }, full || Boolean(state.roomId)))
+      }, full || room.playing || Boolean(state.roomId)))
     }
     const link = document.createElement('a')
     link.href = '#' + room.id
@@ -90,7 +93,7 @@ function render() {
         const id = document.createElement('small')
         id.textContent = '玩家 ' + player.id.slice(0, 8)
         row.append(id)
-        if (!player.self) row.append(button('移出房间', () => {
+        if (!player.self && !room.playing) row.append(button('移出房间', () => {
           if (confirm('将「' + player.name + '」移出房间？')) {
             act('/rooms/' + room.id + '/kick/' + player.id, {}, '已移出玩家')
           }
@@ -112,12 +115,16 @@ async function refresh() {
   if (changed) render()
 }
 
-async function act(path, body, message, activeForm) {
+async function act(path, body, message, activeForm, destination) {
   if (busy) return
   busy = true
   try {
     await pendingPoll
     await request(path, body)
+    if (destination) {
+      location.href = destination
+      return
+    }
     if (activeForm) {
       activeForm.closest('dialog').close()
       activeForm.reset()

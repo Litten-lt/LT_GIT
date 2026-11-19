@@ -1,6 +1,7 @@
 import {randomBytes,randomUUID,scrypt,timingSafeEqual} from 'node:crypto'
 import {promisify} from 'node:util'
 import {digest} from './auth.js'
+import {advance, newMatch, play, tableView} from './mahjong.js'
 
 const rules = ['红中麻将', '长沙麻将']
 const capacity = 4
@@ -30,12 +31,21 @@ export function registerChess(router, db, {basePath, secureCookies}) {
       salt TEXT NOT NULL, hash TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS chess_seats_room ON chess_seats(room_id);
+    CREATE TABLE IF NOT EXISTS chess_matches (
+      room_id TEXT PRIMARY KEY REFERENCES chess_rooms(id) ON DELETE CASCADE,
+      state TEXT NOT NULL,
+      active INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `)
   const cleanup = () => {
     db.prepare('DELETE FROM chess_rooms WHERE NOT EXISTS (SELECT 1 FROM chess_room_passwords WHERE room_id=chess_rooms.id)').run()
+    db.prepare('DELETE FROM chess_matches WHERE active=1 AND updated_at <= unixepoch()-86400').run()
     db.prepare('DELETE FROM chess_players WHERE expires_at <= unixepoch()').run()
-    db.prepare('DELETE FROM chess_seats WHERE seen_at <= unixepoch() - 300').run()
-    db.prepare('DELETE FROM chess_rooms WHERE NOT EXISTS (SELECT 1 FROM chess_seats WHERE room_id=chess_rooms.id)').run()
+    db.prepare(`DELETE FROM chess_seats WHERE seen_at <= unixepoch()-300 AND player_id NOT LIKE 'bot-%'
+      AND NOT EXISTS (SELECT 1 FROM chess_matches WHERE room_id=chess_seats.room_id AND active=1)`).run()
+    db.prepare("DELETE FROM chess_rooms WHERE NOT EXISTS (SELECT 1 FROM chess_seats WHERE room_id=chess_rooms.id AND player_id NOT LIKE 'bot-%')").run()
+    db.prepare("DELETE FROM chess_players WHERE id LIKE 'bot-%' AND NOT EXISTS (SELECT 1 FROM chess_seats WHERE player_id=chess_players.id)").run()
   }
   const findPlayer = req => {
     const token = (req.headers.cookie || '').split(';').map(cookie => cookie.trim())
@@ -46,12 +56,21 @@ export function registerChess(router, db, {basePath, secureCookies}) {
   }
   const seatOf = id => db.prepare('SELECT room_id FROM chess_seats WHERE player_id=?').get(id ?? null)?.room_id ?? null
   const sit = db.prepare('INSERT INTO chess_seats VALUES (?, ?, unixepoch())')
-  const ownerOf = db.prepare('SELECT player_id FROM chess_seats WHERE room_id=? ORDER BY rowid LIMIT 1')
+  const ownerOf = db.prepare("SELECT player_id FROM chess_seats WHERE room_id=? AND player_id NOT LIKE 'bot-%' ORDER BY rowid LIMIT 1")
   const roomMembers = db.prepare(`
     SELECT s.player_id, n.name FROM chess_seats s
     LEFT JOIN chess_names n ON n.player_id=s.player_id
     WHERE s.room_id=? ORDER BY s.rowid
   `)
+  const matchRecord = db.prepare('SELECT state,active FROM chess_matches WHERE room_id=?')
+  const saveMatch = db.prepare(`INSERT INTO chess_matches VALUES (?,?,?,unixepoch())
+    ON CONFLICT(room_id) DO UPDATE SET state=excluded.state, active=excluded.active, updated_at=excluded.updated_at`)
+  const save = (roomId, match) => saveMatch.run(roomId, JSON.stringify(match), Number(match.phase !== 'ended'))
+  const isBot = id => id.startsWith('bot-')
+  const gameRoom = (roomId, playerId) => {
+    if (!playerId || seatOf(playerId) !== roomId) fail(403, '请先加入房间')
+    db.prepare('UPDATE chess_seats SET seen_at=unixepoch() WHERE player_id=?').run(playerId)
+  }
   const mutate = async (req, res, action) => {
     if (secureCookies && !req.secure) fail(400, '请通过 HTTPS 进入棋牌室')
     const password = req.body?.password
@@ -85,12 +104,17 @@ export function registerChess(router, db, {basePath, secureCookies}) {
       if (action === 'kick') {
         const roomId = req.params.id
         if (ownerOf.get(roomId)?.player_id !== playerId) fail(403, '只有房主可以移出玩家')
+        if (matchRecord.get(roomId)?.active) fail(409, '对局中不能移出玩家')
         if (req.params.playerId === playerId) fail(400, '房主可以直接离开房间')
         const removed = db.prepare('DELETE FROM chess_seats WHERE room_id=? AND player_id=?').run(roomId, req.params.playerId)
         if (!removed.changes) fail(404, '该玩家已离开')
         return {roomId}
       }
       if (action === 'leave') {
+        const roomId = seatOf(playerId)
+        if (roomId && matchRecord.get(roomId)?.active && roomMembers.all(roomId).filter(member => !isBot(member.player_id)).length > 1) {
+          fail(409, '多人对局结束后才能离开')
+        }
         db.prepare('DELETE FROM chess_seats WHERE player_id=?').run(playerId)
         cleanup()
         return {token, roomId: null}
@@ -111,6 +135,7 @@ export function registerChess(router, db, {basePath, secureCookies}) {
       }
       const roomId = req.params.id
       if (!db.prepare('SELECT 1 FROM chess_room_passwords WHERE room_id=?').get(roomId)) fail(404, '房间已经关闭')
+      if (matchRecord.get(roomId)?.active) fail(409, '房间正在对局')
       if (db.prepare('SELECT count(*) AS count FROM chess_seats WHERE room_id=?').get(roomId).count >= capacity) fail(409, '房间已满')
       if (!passwordMatches) fail(403, '房间密码不正确')
       sit.run(playerId, roomId)
@@ -139,10 +164,15 @@ export function registerChess(router, db, {basePath, secureCookies}) {
       const owner = roomId ? ownerOf.get(roomId).player_id : null
       const isOwner = Boolean(owner && owner === playerId)
       for (const room of rooms) {
-        room.members = roomMembers.all(room.id).map((member, index) => ({
+        const game = matchRecord.get(room.id)
+        if (game?.active) room.playing = true
+        if (game && room.id === roomId && tableView(JSON.parse(game.state), playerId)) room.hasMatch = true
+        const ownerId = ownerOf.get(room.id).player_id
+        room.members = roomMembers.all(room.id).map(member => ({
           name: member.name ?? member.player_id.slice(0, 8),
-          owner: index === 0,
+          owner: member.player_id === ownerId,
           self: member.player_id === playerId,
+          ...(isBot(member.player_id) ? {bot: true} : {}),
           ...(isOwner && room.id === roomId ? {id: member.player_id} : {})
         }))
       }
@@ -161,4 +191,58 @@ export function registerChess(router, db, {basePath, secureCookies}) {
   router.post('/api/chess/leave', handle('leave'))
   router.post('/api/chess/name', handle('name'))
   router.post('/api/chess/rooms/:id/kick/:playerId', handle('kick'))
+  const table = (req, res, action) => {
+    if (secureCookies && !req.secure) fail(400, '请通过 HTTPS 进入牌桌')
+    const data = db.transaction(() => {
+      cleanup()
+      const roomId = req.params.id
+      const playerId = findPlayer(req)
+      gameRoom(roomId, playerId)
+      const record = matchRecord.get(roomId)
+      if (action === 'bot' || action === 'start') {
+        if (ownerOf.get(roomId)?.player_id !== playerId) fail(403, '只有房主可以操作')
+        if (db.prepare('SELECT rule FROM chess_rooms WHERE id=?').get(roomId).rule !== 0) fail(409, '该玩法暂未开放')
+        const members = roomMembers.all(roomId)
+        if (action === 'start' && record?.active) return tableView(JSON.parse(record.state), playerId)
+        if (record?.active) fail(409, '对局已经开始')
+        if (action === 'bot') {
+          if (members.length >= capacity) fail(409, '房间已满')
+          const id = 'bot-' + randomUUID()
+          const names = new Set(members.map(member => member.name))
+          const label = ['机器人 1', '机器人 2', '机器人 3'].find(name => !names.has(name)) ?? '机器人'
+          db.prepare('INSERT INTO chess_players VALUES (?, ?, unixepoch()+604800)').run(id, digest(id))
+          db.prepare('INSERT INTO chess_names VALUES (?, ?)').run(id, label)
+          sit.run(id, roomId)
+          return {ok: true}
+        }
+        if (members.length !== capacity) fail(409, '需要四人入座才可开局')
+        const match = newMatch(members.map(member => ({
+          id: member.player_id, name: member.name ?? member.player_id.slice(0, 8), bot: isBot(member.player_id)
+        })))
+        save(roomId, match)
+        return tableView(match, playerId)
+      }
+      if (!record) fail(404, '尚未开始对局')
+      const match = JSON.parse(record.state)
+      if (!tableView(match, playerId)) fail(403, '你不在这局牌桌上')
+      const time = Date.now()
+      let changed = (action === 'read' || match.deadline <= time) && advance(match, time, true)
+      if (action === 'move') {
+        const seat = match.players.findIndex(player => player.id === playerId)
+        if (req.body?.id !== match.id || req.body?.version !== match.version || !play(match, seat, req.body.move)) {
+          if (changed) save(roomId, match)
+          return {stale: true}
+        }
+        changed = true
+      }
+      if (changed) save(roomId, match)
+      return tableView(match, playerId)
+    }).immediate()
+    if (data.stale) return res.status(409).json({error: '牌局已更新，请查看最新牌面'})
+    res.json(data)
+  }
+  router.post('/api/chess/rooms/:id/bots', (req,res) => table(req,res,'bot'))
+  router.post('/api/chess/rooms/:id/start', (req,res) => table(req,res,'start'))
+  router.get('/api/chess/rooms/:id/match', (req,res) => table(req,res,'read'))
+  router.post('/api/chess/rooms/:id/match', (req,res) => table(req,res,'move'))
 }
