@@ -76,7 +76,6 @@ h1 { margin: 0; font: 600 clamp(.95rem, 2.5vw, 1.45rem) Georgia, SimSun, serif; 
 }
 .seat:is(.seat-1,.seat-3) .backs { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, auto); }
 .seat:is(.seat-1,.seat-3) .backs i { width: 15px; height: 7px; }
-.seat:is(.seat-1,.seat-3) .meld-group { flex-direction: column; }
 .seat .discards .tile, .seat .melds .tile { width: clamp(19px, 3.5vw, 38px); }
 #result { position: fixed; z-index: 3; inset: 50% auto auto 50%; transform: translate(-50%,-50%); width: min(94vw, 580px); max-height: 85dvh; overflow: auto; padding: .8rem; background: #153e30; border: 1px solid #baa879; border-radius: .6rem; box-shadow: 0 8px 36px #0009; }
 #result h2, #result p { margin: .4rem 0; }
