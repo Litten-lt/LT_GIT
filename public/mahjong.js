@@ -125,9 +125,12 @@ function drawSeat(relative) {
   const section = node('section', 'seat seat-' + relative)
   const title = player.name + (relative === 0 ? ' · 你' : '') + (seat === state.dealer ? ' · 庄' : '')
   const acting = state.events.at(-1)?.seat === seat
-  section.append(node('span', 'seat-title' + (state.turn === seat && state.phase !== 'ended' ? ' current' : '') + (acting ? ' acting' : ''), title))
-  section.append(node('p', 'score', state.totals[seat] + ' 分'))
+  const identity = node('div', 'seat-identity')
+  section.append(identity)
+  identity.append(node('span', 'seat-title' + (state.turn === seat && state.phase !== 'ended' ? ' current' : '') + (acting ? ' acting' : ''), title))
+  identity.append(node('p', 'score', state.totals[seat] + ' 分'))
   if (relative) {
+    identity.append(node('span', 'hand-count', '手牌 ' + player.count + ' 张'))
     const backs = node('div', 'backs')
     backs.setAttribute('aria-label', player.count + ' 张手牌')
     for (let i = 0; i < player.count; i++) backs.append(node('i', ''))
@@ -146,8 +149,24 @@ function drawSeat(relative) {
     const latest = state.lastDiscard?.seat === seat && value === state.lastDiscard.tile && index === values.length - 1
     discards.append(tile(value, latest ? 'latest' : ''))
   })
-  section.append(melds, discards)
+  const visibleTiles = node('div', 'seat-tiles')
+  visibleTiles.append(melds, discards)
+  section.append(visibleTiles)
   return section
+}
+
+function renderHistory() {
+  const seats = [2, 3, 1, 0].map(drawSeat)
+  for (const seat of seats) {
+    seat.querySelectorAll('.backs, .hand-count, .melds').forEach(element => element.remove())
+  }
+  get('history-seats').replaceChildren(...seats)
+}
+
+get('history-open').onclick = () => {
+  if (!state) return
+  renderHistory()
+  get('history').showModal()
 }
 
 function renderHand(discards, animateDraw) {
@@ -200,7 +219,9 @@ function renderHand(discards, animateDraw) {
 
 function render(animateDraw) {
   get('remaining').textContent = '第 ' + state.round + ' 局 · 剩余 ' + state.remaining
-  get('felt').replaceChildren(...[2, 3, 1, 0].map(drawSeat))
+  const felt = get('felt')
+  felt.replaceChildren(...[2, 3, 1, 0].map(drawSeat), get('latest').parentElement)
+  if (get('history').open) renderHistory()
   const over = state.phase === 'ended'
   updateCountdown()
   const discards = state.moves.filter(move => move.type === 'discard')
@@ -339,7 +360,7 @@ get('fullscreen').onclick = async () => {
   const portrait = matchMedia('(orientation: portrait)').matches
   if (!document.fullscreenElement || portrait) {
     hint.textContent = document.fullscreenElement ? '请横放手机。' :
-      '当前浏览器保留上下栏。可通过右上角菜单在系统浏览器中打开。'
+      '若浏览器仍显示工具栏，请添加到主屏幕，再从桌面图标打开。'
     hint.hidden = false
   }
 }

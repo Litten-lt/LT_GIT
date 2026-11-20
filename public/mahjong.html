@@ -4,27 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#173c2e">
+  <link rel="manifest" href="./mahjong.webmanifest">
+  <link rel="apple-touch-icon" href="./mahjong-192.png">
   <title>知木 · 广东红中麻将</title>
   <link rel="stylesheet" href="./mahjong.css">
 </head>
 <body>
   <main class="table">
     <header>
-      <a href="./chess.html">‹ 房间大厅</a><h1>广东红中麻将</h1>
-      <div class="tools"><button id="sound" type="button" aria-pressed="false">开启语音</button><button id="fullscreen" type="button">横屏全屏</button></div>
+      <a href="./chess.html">‹ 房间大厅</a><div class="table-heading"><h1>广东红中麻将</h1><span id="remaining"></span></div>
+      <div class="tools"><button id="history-open" type="button">牌河</button><button id="sound" type="button" aria-pressed="false">开启语音</button><button id="fullscreen" type="button">横屏全屏</button></div>
     </header>
     <p class="rotate-hint">横放手机，牌面会更大。</p>
     <p id="fullscreen-hint" role="status" hidden></p>
     <div class="board">
-      <div class="felt" id="felt"></div>
-      <div class="table-center">
-        <span id="remaining"></span>
-        <div id="latest" aria-live="polite"></div>
+      <div class="felt" id="felt">
+        <div class="table-center">
+          <div id="latest" aria-live="polite"></div>
+        </div>
       </div>
     </div>
-    <div class="turn-status"><p id="message" role="status">正在连接牌桌…</p><span id="countdown" aria-label="本轮剩余秒数"></span></div>
-    <div id="actions" aria-label="可用操作"></div>
+    <div class="controls"><div class="turn-status"><p id="message" role="status">正在连接牌桌…</p><span id="countdown" aria-label="本轮剩余秒数"></span></div>
+    <div id="actions" aria-label="可用操作"></div></div>
     <div id="hand" aria-label="我的手牌"></div>
+    <dialog id="history" aria-labelledby="history-title">
+      <form method="dialog"><h2 id="history-title">各家弃牌</h2><button>关闭</button></form>
+      <div id="history-seats"></div>
+    </dialog>
     <section id="result" hidden></section>
   </main>
   <script type="module" src="./mahjong.js"></script>

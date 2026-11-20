@@ -1,0 +1,22 @@
+{
+  "id": "./chess.html",
+  "name": "知木 · 广东红中麻将",
+  "short_name": "红中麻将",
+  "start_url": "./chess.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d221a",
+  "theme_color": "#173c2e",
+  "icons": [
+    {
+      "src": "./mahjong-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./mahjong-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
