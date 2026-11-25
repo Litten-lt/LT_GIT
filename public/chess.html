@@ -37,7 +37,8 @@
       <label>房间名称<input name="name" required maxlength="30" autofocus></label>
       <label>牌类<select name="game"><option value="mahjong">麻将</option></select></label>
       <label>麻将规则<select name="rule" required></select></label>
-      <label>房间密码<input name="password" type="password" required maxlength="64" autocomplete="new-password"></label>
+      <label class="room-password-toggle"><input id="require-room-password" type="checkbox" aria-controls="create-password"> 设置房间密码</label>
+      <label id="create-password" hidden>房间密码<input name="password" type="password" required disabled maxlength="64" autocomplete="new-password" value="123456"></label>
       <p class="dialog-message" role="alert"></p>
       <div class="chess-actions"><button type="button" class="outline-button" data-close>取消</button><button class="primary">创建房间</button></div>
     </form>

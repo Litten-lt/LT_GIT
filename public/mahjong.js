@@ -380,6 +380,8 @@ function updateCountdown() {
     Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000)) + ' 秒' : ''
 }
 
+let roomClosed = false
+
 async function sync(command) {
   const response = await fetch(endpoint, command ? {
     method: 'POST',
@@ -387,6 +389,15 @@ async function sync(command) {
     body: JSON.stringify(command)
   } : {})
   const next = await response.json()
+  if (response.status === 410) {
+    roomClosed = true
+    state = null
+    get('actions').replaceChildren()
+    get('hand').replaceChildren()
+    get('result').hidden = true
+    updateCountdown()
+    throw new Error(next.error + '，请返回房间大厅。')
+  }
   if (!response.ok) throw new Error(next.error)
   if (connectionError || state?.id !== next.id || state.version !== next.version) {
     const sameMatch = state?.id === next.id
@@ -428,7 +439,7 @@ async function poll() {
     await pendingPoll
     pendingPoll = undefined
   }
-  setTimeout(poll, document.hidden ? 1800 : 350)
+  if (!roomClosed) setTimeout(poll, document.hidden ? 1800 : 350)
 }
 if (room) {
   poll()

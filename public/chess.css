@@ -21,3 +21,6 @@ dialog.chess-dialog { width: min(420px, 92vw); padding: 1.25rem; }
 .room-members li { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding-block: .3rem; }
 .room-members small { color: var(--muted); }
 .room-members button { padding: .3rem .65rem; }
+
+.chess-dialog label.room-password-toggle { display: flex; align-items: center; }
+.chess-dialog label[hidden] { display: none; }

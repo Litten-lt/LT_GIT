@@ -38,15 +38,24 @@ export function registerChess(router, db, {basePath, secureCookies}) {
       updated_at INTEGER NOT NULL
     );
   `)
-  const cleanup = () => {
-    db.prepare('DELETE FROM chess_rooms WHERE NOT EXISTS (SELECT 1 FROM chess_room_passwords WHERE room_id=chess_rooms.id)').run()
-    db.prepare('DELETE FROM chess_matches WHERE active=1 AND updated_at <= unixepoch()-86400').run()
+  const pruneRooms = db.prepare(`
+    DELETE FROM chess_rooms
+    WHERE NOT EXISTS (
+        SELECT 1 FROM chess_seats AS seat
+        WHERE seat.room_id=chess_rooms.id AND seat.player_id NOT LIKE 'bot-%'
+          AND seat.seen_at > unixepoch() - CASE WHEN EXISTS (
+            SELECT 1 FROM chess_matches WHERE room_id=chess_rooms.id AND active=1
+          ) THEN 900 ELSE 300 END
+      )
+  `)
+  const cleanup = db.transaction(() => {
     db.prepare('DELETE FROM chess_players WHERE expires_at <= unixepoch()').run()
-    db.prepare(`DELETE FROM chess_seats WHERE seen_at <= unixepoch()-300 AND player_id NOT LIKE 'bot-%'
-      AND NOT EXISTS (SELECT 1 FROM chess_matches WHERE room_id=chess_seats.room_id AND active=1)`).run()
-    db.prepare("DELETE FROM chess_rooms WHERE NOT EXISTS (SELECT 1 FROM chess_seats WHERE room_id=chess_rooms.id AND player_id NOT LIKE 'bot-%')").run()
+    pruneRooms.run()
     db.prepare("DELETE FROM chess_players WHERE id LIKE 'bot-%' AND NOT EXISTS (SELECT 1 FROM chess_seats WHERE player_id=chess_players.id)").run()
-  }
+  })
+  const roomCredential = db.prepare('SELECT salt, hash FROM chess_room_passwords WHERE room_id=?')
+  const roomExists = db.prepare('SELECT 1 FROM chess_rooms WHERE id=?')
+  const touchSeat = db.prepare("UPDATE chess_seats SET seen_at=unixepoch() WHERE room_id=? AND player_id=? AND player_id NOT LIKE 'bot-%'")
   const findPlayer = req => {
     const token = (req.headers.cookie || '').split(';').map(cookie => cookie.trim())
       .find(cookie => cookie.startsWith(cookieName + '='))?.slice(cookieName.length + 1)
@@ -68,24 +77,25 @@ export function registerChess(router, db, {basePath, secureCookies}) {
   const save = (roomId, match) => saveMatch.run(roomId, JSON.stringify(match), Number(match.phase !== 'ended'))
   const isBot = id => id.startsWith('bot-')
   const gameRoom = (roomId, playerId) => {
+    if (!roomExists.get(roomId)) fail(410, '房间已关闭，可能有玩家中途离开或长时间无人活动')
     if (!playerId || seatOf(playerId) !== roomId) fail(403, '请先加入房间')
-    db.prepare('UPDATE chess_seats SET seen_at=unixepoch() WHERE player_id=?').run(playerId)
+    touchSeat.run(roomId, playerId)
   }
   const mutate = async (req, res, action) => {
     if (secureCookies && !req.secure) fail(400, '请通过 HTTPS 进入棋牌室')
     const password = req.body?.password
     let salt, hash, passwordMatches
-    if (action === 'create') {
+    if (action === 'create' && password !== undefined) {
       if (typeof password !== 'string' || !password.trim() || password.length > 64) fail(400, '请输入 1–64 个字符的房间密码')
       salt = randomBytes(16).toString('hex')
       hash = (await derive(password, salt, 32)).toString('hex')
     }
     if (action === 'join' && typeof password === 'string' && password.length && password.length <= 64) {
-      const credential = db.prepare('SELECT salt, hash FROM chess_room_passwords WHERE room_id=?').get(req.params.id)
+      const credential = roomCredential.get(req.params.id)
       if (credential) passwordMatches = timingSafeEqual(await derive(password, credential.salt, 32), Buffer.from(credential.hash, 'hex'))
     }
+    cleanup.immediate()
     const result = db.transaction(() => {
-      cleanup()
       let playerId = findPlayer(req)
       let token
       if (!playerId) {
@@ -108,19 +118,24 @@ export function registerChess(router, db, {basePath, secureCookies}) {
         if (req.params.playerId === playerId) fail(400, '房主可以直接离开房间')
         const removed = db.prepare('DELETE FROM chess_seats WHERE room_id=? AND player_id=?').run(roomId, req.params.playerId)
         if (!removed.changes) fail(404, '该玩家已离开')
+        touchSeat.run(roomId, playerId)
         return {roomId}
       }
       if (action === 'leave') {
         const roomId = seatOf(playerId)
-        if (roomId && matchRecord.get(roomId)?.active && roomMembers.all(roomId).filter(member => !isBot(member.player_id)).length > 1) {
-          fail(409, '多人对局结束后才能离开')
+        if (roomId && matchRecord.get(roomId)?.active) {
+          db.prepare('DELETE FROM chess_rooms WHERE id=?').run(roomId)
+        } else {
+          db.prepare('DELETE FROM chess_seats WHERE player_id=?').run(playerId)
         }
-        db.prepare('DELETE FROM chess_seats WHERE player_id=?').run(playerId)
         cleanup()
         return {token, roomId: null}
       }
       const current = seatOf(playerId)
-      if (current && action === 'join' && current === req.params.id) return {token, roomId: current}
+      if (current && action === 'join' && current === req.params.id) {
+        touchSeat.run(current, playerId)
+        return {token, roomId: current}
+      }
       if (current) fail(409, '请先离开当前房间')
       if (action === 'create') {
         const name = typeof req.body?.name === 'string' ? req.body.name.trim() : ''
@@ -129,15 +144,18 @@ export function registerChess(router, db, {basePath, secureCookies}) {
         if (db.prepare('SELECT count(*) AS count FROM chess_rooms').get().count >= 100) fail(429, '大厅房间已达上限，请稍后再试')
         const roomId = randomUUID()
         db.prepare('INSERT INTO chess_rooms VALUES (?, ?, ?)').run(roomId, name, rule)
-        db.prepare('INSERT INTO chess_room_passwords VALUES (?, ?, ?)').run(roomId, salt, hash)
+        if (hash) db.prepare('INSERT INTO chess_room_passwords VALUES (?, ?, ?)').run(roomId, salt, hash)
         sit.run(playerId, roomId)
         return {token, roomId}
       }
       const roomId = req.params.id
-      if (!db.prepare('SELECT 1 FROM chess_room_passwords WHERE room_id=?').get(roomId)) fail(404, '房间已经关闭')
+      if (!roomExists.get(roomId)) fail(404, '房间已经关闭')
       if (matchRecord.get(roomId)?.active) fail(409, '房间正在对局')
       if (db.prepare('SELECT count(*) AS count FROM chess_seats WHERE room_id=?').get(roomId).count >= capacity) fail(409, '房间已满')
-      if (!passwordMatches) fail(403, '房间密码不正确')
+      if (roomCredential.get(roomId)) {
+        if (password === undefined || password === '') fail(401, '此房间需要密码')
+        if (!passwordMatches) fail(403, '房间密码不正确')
+      }
       sit.run(playerId, roomId)
       return {token, roomId}
     }).immediate()
@@ -151,8 +169,8 @@ export function registerChess(router, db, {basePath, secureCookies}) {
   }
 
   router.get('/api/chess', (req, res) => {
+    cleanup.immediate()
     const result = db.transaction(() => {
-      cleanup()
       const playerId = findPlayer(req)
       const rooms = db.prepare(`
         SELECT r.id, r.name, r.rule, count(*) AS players
@@ -181,8 +199,8 @@ export function registerChess(router, db, {basePath, secureCookies}) {
     res.json(result)
   })
   router.post('/api/chess/presence', (req, res) => {
-    db.prepare('UPDATE chess_seats SET seen_at=unixepoch() WHERE player_id=? AND seen_at>unixepoch()-300')
-      .run(findPlayer(req) ?? null)
+    cleanup.immediate()
+    if (typeof req.body?.roomId === 'string') touchSeat.run(req.body.roomId, findPlayer(req) ?? null)
     res.json({ok: true})
   })
   const handle = action => (req, res, next) => mutate(req, res, action).catch(next)
@@ -193,8 +211,8 @@ export function registerChess(router, db, {basePath, secureCookies}) {
   router.post('/api/chess/rooms/:id/kick/:playerId', handle('kick'))
   const table = (req, res, action) => {
     if (secureCookies && !req.secure) fail(400, '请通过 HTTPS 进入牌桌')
+    cleanup.immediate()
     const data = db.transaction(() => {
-      cleanup()
       const roomId = req.params.id
       const playerId = findPlayer(req)
       gameRoom(roomId, playerId)
@@ -245,4 +263,5 @@ export function registerChess(router, db, {basePath, secureCookies}) {
   router.post('/api/chess/rooms/:id/start', (req,res) => table(req,res,'start'))
   router.get('/api/chess/rooms/:id/match', (req,res) => table(req,res,'read'))
   router.post('/api/chess/rooms/:id/match', (req,res) => table(req,res,'move'))
+  return () => cleanup.immediate()
 }

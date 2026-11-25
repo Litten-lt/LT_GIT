@@ -52,14 +52,6 @@ h1 { margin: 0; font: 600 clamp(.95rem, 2.5vw, 1.45rem) Georgia, SimSun, serif; 
 #hand { min-height: calc(var(--hand-width) / .67 + .7rem); padding: .24rem .15rem .46rem; overflow: clip; }
 #result { text-align: center; padding-bottom: 1rem; }
 #result a { display: inline-block; text-decoration: none; }
-@media (orientation: portrait) and (max-width: 640px) {
-  .rotate-hint { display: block; margin: 0 0 .4rem; text-align: center; font-size: .72rem; color: #ded1ab; }
-  header { grid-template-columns: auto 1fr; }
-  header h1 { text-align: right; }
-  .tools { grid-column: 1 / -1; }
-  .board { min-height: 46dvh; }
-  .felt { grid-template-rows: auto minmax(125px, 1fr) auto; }
-}
 .seat:is(.seat-1,.seat-3) .backs { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, auto); }
 .seat:is(.seat-1,.seat-3) .backs i { width: 15px; height: 7px; }
 .seat .discards .tile, .seat .melds .tile { width: clamp(19px, 3.5vw, 38px); }
@@ -69,6 +61,7 @@ h1 { margin: 0; font: 600 clamp(.95rem, 2.5vw, 1.45rem) Georgia, SimSun, serif; 
 .round-scores { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .35rem; font-size: .8rem; overflow-wrap: anywhere; }
 .table-heading { text-align: center; }
 .hand-count { display: none; }
+.score, .hand-count { white-space: nowrap; }
 #history {
   color: inherit;
   background: #153e30;
@@ -82,6 +75,50 @@ h1 { margin: 0; font: 600 clamp(.95rem, 2.5vw, 1.45rem) Georgia, SimSun, serif; 
 #history h2 { font-size: 1rem; margin: .3rem 0; }
 #history-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 #history-seats .seat { grid-area: auto; }
+
+@media (orientation: portrait) and (max-width: 640px) {
+  header { grid-template-columns: auto minmax(0, 1fr); }
+  .table-heading { justify-self: end; }
+  .tools { grid-column: 1 / -1; justify-content: center; flex-wrap: wrap; }
+  .rotate-hint { display: block; margin: 0 0 .4rem; text-align: center; font-size: .72rem; color: #ded1ab; }
+  .felt {
+    grid-template: auto minmax(min-content, 1fr) auto / minmax(0, 1fr) minmax(0, .72fr) minmax(0, 1fr);
+    align-items: center;
+    gap: .45rem .25rem;
+  }
+  .felt .seat-2 { grid-area: 1 / 1 / 2 / -1; }
+  .felt .seat-0 { grid-area: 3 / 1 / 4 / -1; }
+  .felt .seat-0 {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: .45rem;
+  }
+  .felt .seat-identity { min-width: 0; }
+  .felt .seat-tiles { min-width: 0; }
+  .felt .seat .backs { display: none; }
+  .felt .seat-identity {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: .1rem .22rem;
+    margin-bottom: .15rem;
+  }
+  .felt .score, .felt .hand-count { display: inline; font-size: .67rem; margin: 0; }
+  .felt :is(.seat-1, .seat-3) .hand-count { flex-basis: 100%; }
+  .felt .discards, .felt .melds { gap: 3px; margin-block: .18rem; }
+  .felt :is(.discards, .melds):empty { display: none; }
+  .felt .discards .tile:nth-last-child(n+5) { display: none; }
+  .table-center {
+    position: static;
+    grid-area: 2 / 2;
+    width: auto;
+    transform: none;
+    overflow-wrap: anywhere;
+  }
+  #latest { margin-top: 0; }
+}
 
 @media (orientation: landscape) and (max-height: 520px) {
   .table {
@@ -141,11 +178,26 @@ h1 { margin: 0; font: 600 clamp(.95rem, 2.5vw, 1.45rem) Georgia, SimSun, serif; 
     line-height: 1.15;
   }
   #latest { display: flex; justify-content: center; align-items: center; min-height: 0; margin: 0; }
-  #latest .tile { width: clamp(15px, 5dvh, 24px); }
+  #latest .tile { width: clamp(21px, 7.4dvh, 37px); }
   .controls { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: .1rem .65rem; padding-block: .15rem; }
   #message { margin: .12rem 0; font-size: .73rem; }
   #actions { margin: 0; }
   #actions button { min-height: 32px; padding: .16rem .6rem; }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .felt { --discard-width: clamp(18px, min(6.2dvh, 2.85vw), 32px); }
+  .felt .seat:not(.seat-0) .seat-tiles { container-type: inline-size; }
+  .felt .seat-0 .discards .tile { width: var(--discard-width); }
+  .felt .seat:not(.seat-0) .discards .tile {
+    width: min(var(--discard-width), calc((100cqw - 10px) / 6));
+  }
+  @container (max-width: 185px) {
+    .felt .seat:not(.seat-0) .discards .tile {
+      width: min(var(--discard-width), calc((100cqw - 6px) / 4));
+    }
+    .felt .seat:not(.seat-0) .discards .tile:nth-last-child(n+5) { display: none; }
+  }
 }
 
 @media (display-mode: standalone) {

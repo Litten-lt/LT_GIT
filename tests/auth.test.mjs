@@ -7,13 +7,13 @@ import os from 'node:os'
 import path from 'node:path'
 async function setup(t,options={}){
   const folder=fs.mkdtempSync(path.join(os.tmpdir(),'zhimu-auth-'))
-  const {app,db}=createApp({uploadDir:folder,...options});await setAdminPassword(db,'allen','a-good-test-password')
+  const {app,db,cleanupChess}=createApp({uploadDir:folder,...options});await setAdminPassword(db,'allen','a-good-test-password')
   const server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s))})
   const base='http://127.0.0.1:'+server.address().port+(options.basePath||'')
   t.after(async()=>{await new Promise(r=>server.close(r));db.close();fs.rmSync(folder,{recursive:true,force:true})})
   const request=(url,method='GET',body,cookie='',headers={})=>fetch(base+url,{method,headers:{'Content-Type':'application/json',Cookie:cookie,...headers},body:body?JSON.stringify(body):undefined})
   const login=async()=>{const r=await request('/api/auth/login','POST',{username:'allen',password:'a-good-test-password'});assert.equal(r.status,200);return r.headers.get('set-cookie').split(';')[0]}
-  return {db,request,login}
+  return {db,request,login,cleanupChess}
 }
 test('all knowledge and attachments require admin, including published content',async t=>{
   const {db,request,login}=await setup(t),cookie=await login()
@@ -45,7 +45,7 @@ test('chess guests can create and join rooms but cannot access notes',async t=>{
   const cookie=header.split(';')[0], join='/api/chess/rooms/'+roomId+'/join'
   assert.equal((await request('/api/tree','GET',null,cookie)).status,401)
   assert.equal((await request(join,'POST',{password:'room-test'},cookie)).status,200)
-  assert.equal((await request(join,'POST',{})).status,403)
+  assert.equal((await request(join,'POST',{})).status,401)
   assert.equal((await request(join,'POST',{password:'wrong'})).status,403)
   const results=await Promise.all(Array.from({length:4},()=>request(join,'POST',{password:'room-test'})))
   assert.deepEqual(results.map(r=>r.status).sort(),[200,200,200,409])
@@ -146,4 +146,85 @@ test('production login enforces HTTPS and secure scoped cookies; initial passwor
   const r=await request('/api/auth/login','POST',{username:'allen',password:'a-good-test-password'},'',{'X-Forwarded-Proto':'https'})
   const header=r.headers.get('set-cookie');assert.match(header,/HttpOnly/);assert.match(header,/Secure/);assert.match(header,/SameSite=Strict/);assert.match(header,/Path=\/zhimu/)
   assert.equal((await request('/api/branches','POST',{name:'test'},header.split(';')[0])).status,403)
+})
+
+test('idle rooms expire according to match state and only seated humans renew them', async t => {
+  const {db, request, cleanupChess} = await setup(t)
+  const created = await request('/api/chess/rooms', 'POST', {
+    name: '清理测试', game: 'mahjong', rule: '红中麻将', password: 'room-test'
+  })
+  assert.equal(created.status, 201)
+  const cookie = created.headers.get('set-cookie').split(';')[0]
+  const {roomId} = await created.json()
+  const table = '/api/chess/rooms/' + roomId
+  const exists = () => Boolean(db.prepare('SELECT 1 FROM chess_rooms WHERE id=?').get(roomId))
+  const ageHuman = seconds => db.prepare("UPDATE chess_seats SET seen_at=unixepoch()-? WHERE room_id=? AND player_id NOT LIKE 'bot-%'").run(seconds, roomId)
+  const presence = (id, token) => request('/api/chess/presence', 'POST', {roomId: id}, token)
+  ageHuman(290)
+  await presence(roomId, cookie)
+  assert.ok(db.prepare('SELECT seen_at > unixepoch()-10 AS fresh FROM chess_seats WHERE room_id=?').get(roomId).fresh)
+  for (let i = 0; i < 3; i++) assert.equal((await request(table + '/bots', 'POST', {}, cookie)).status, 200)
+  assert.equal((await request(table + '/start', 'POST', {}, cookie)).status, 200)
+  ageHuman(301)
+  cleanupChess()
+  assert.ok(exists())
+  await presence('another-room', cookie)
+  await presence(roomId)
+  await request('/api/chess', 'GET', null, cookie)
+  assert.ok(db.prepare("SELECT seen_at <= unixepoch()-301 AS idle FROM chess_seats WHERE room_id=? AND player_id NOT LIKE 'bot-%'").get(roomId).idle)
+  ageHuman(900)
+  cleanupChess()
+  assert.equal(exists(), false)
+  assert.equal(db.prepare('SELECT count(*) AS n FROM chess_matches WHERE room_id=?').get(roomId).n, 0)
+  assert.equal(db.prepare('SELECT count(*) AS n FROM chess_seats WHERE room_id=?').get(roomId).n, 0)
+  assert.equal((await request(table + '/match', 'GET', null, cookie)).status, 410)
+
+  const waiting = await request('/api/chess/rooms', 'POST', {
+    name: '等待测试', game: 'mahjong', rule: '红中麻将', password: 'room-test'
+  }, cookie)
+  assert.equal(waiting.status, 201)
+  const waitingId = (await waiting.json()).roomId
+  db.prepare('UPDATE chess_seats SET seen_at=unixepoch()-300 WHERE room_id=?').run(waitingId)
+  cleanupChess()
+  assert.equal(db.prepare('SELECT 1 FROM chess_rooms WHERE id=?').get(waitingId), undefined)
+})
+
+test('a guest can leave an active multiplayer match and dissolve the room', async t => {
+  const {request} = await setup(t)
+  const created = await request('/api/chess/rooms', 'POST', {
+    name: '解散测试', game: 'mahjong', rule: '红中麻将', password: 'room-test'
+  })
+  const owner = created.headers.get('set-cookie').split(';')[0]
+  const {roomId} = await created.json()
+  const room = '/api/chess/rooms/' + roomId
+  const joined = await request(room + '/join', 'POST', {password: 'room-test'})
+  assert.equal(joined.status, 200)
+  const guest = joined.headers.get('set-cookie').split(';')[0]
+  for (let i = 0; i < 2; i++) assert.equal((await request(room + '/bots', 'POST', {}, owner)).status, 200)
+  assert.equal((await request(room + '/start', 'POST', {}, owner)).status, 200)
+  assert.equal((await request('/api/chess/leave', 'POST', {}, guest)).status, 200)
+  assert.equal((await request(room + '/match', 'GET', null, owner)).status, 410)
+  const lobby = await (await request('/api/chess', 'GET', null, owner)).json()
+  assert.equal(lobby.roomId, null)
+  assert.equal(lobby.rooms.some(entry => entry.id === roomId), false)
+})
+
+test('open chess rooms accept passwordless entry while protected rooms prompt for a password', async t => {
+  const {db, request, cleanupChess} = await setup(t)
+  const create = body => request('/api/chess/rooms', 'POST', {
+    name: '123456', game: 'mahjong', rule: '红中麻将', ...body
+  })
+  const open = await create({})
+  assert.equal(open.status, 201)
+  const {roomId} = await open.json()
+  cleanupChess()
+  assert.equal(db.prepare('SELECT count(*) AS n FROM chess_room_passwords WHERE room_id=?').get(roomId).n, 0)
+  assert.equal((await request('/api/chess/rooms/' + roomId + '/join', 'POST', {})).status, 200)
+
+  const locked = await create({password: '123456'})
+  assert.equal(locked.status, 201)
+  const path = '/api/chess/rooms/' + (await locked.json()).roomId + '/join'
+  assert.equal((await request(path, 'POST', {})).status, 401)
+  assert.equal((await request(path, 'POST', {password: 'wrong'})).status, 403)
+  assert.equal((await request(path, 'POST', {password: '123456'})).status, 200)
 })

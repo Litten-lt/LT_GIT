@@ -2,6 +2,15 @@ const byId = id => document.getElementById(id)
 const form = byId('create-room')
 const profile = byId('player-name')
 const join = byId('join-room')
+const requirePassword = byId('require-room-password')
+const passwordField = byId('create-password')
+
+function updatePasswordField() {
+  passwordField.hidden = !requirePassword.checked
+  form.elements.password.disabled = !requirePassword.checked
+}
+
+requirePassword.onchange = updatePasswordField
 const nickname = byId('nickname')
 const newRoom = byId('new-room')
 const list = byId('rooms')
@@ -15,7 +24,7 @@ async function request(path = '', body) {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
   })
   const result = await response.json()
-  if (!response.ok) throw new Error(result.error)
+  if (!response.ok) throw Object.assign(new Error(result.error), {status: response.status})
   return result
 }
 
@@ -73,8 +82,7 @@ function render() {
       actions.append(button('离开房间', () => act('/leave', {}, '已离开房间'), false, 'outline-button'))
     } else {
       actions.append(button(room.playing ? '对局中' : full ? '已满' : '加入房间', () => {
-        join.dataset.room = room.id
-        openForm(join, '加入「' + room.name + '」')
+        act('/rooms/' + room.id + '/join', {}, '已入座', null, null, room)
       }, full || room.playing || Boolean(state.roomId)))
     }
     const link = document.createElement('a')
@@ -107,7 +115,7 @@ function render() {
 }
 
 async function refresh() {
-  if (state?.roomId || !state) await request('/presence', {})
+  if (state?.roomId) await request('/presence', {roomId: state.roomId})
   const next = await request()
   const changed = JSON.stringify(state) !== JSON.stringify(next)
   if (state?.roomId && !next.roomId) status.textContent = '你已离开原房间。'
@@ -115,7 +123,7 @@ async function refresh() {
   if (changed) render()
 }
 
-async function act(path, body, message, activeForm, destination) {
+async function act(path, body, message, activeForm, destination, joiningRoom) {
   if (busy) return
   busy = true
   try {
@@ -132,6 +140,12 @@ async function act(path, body, message, activeForm, destination) {
     await refresh()
     status.textContent = message
   } catch (error) {
+    if (joiningRoom && error.status === 401) {
+      join.dataset.room = joiningRoom.id
+      openForm(join, '加入「' + joiningRoom.name + '」')
+      join.querySelector('.dialog-message').textContent = error.message
+      return
+    }
     const alert = activeForm?.closest('dialog').open ? activeForm.querySelector('.dialog-message') : status
     alert.textContent = error.message
   } finally {
@@ -139,7 +153,13 @@ async function act(path, body, message, activeForm, destination) {
   }
 }
 
-newRoom.onclick = () => openForm(form)
+newRoom.onclick = () => {
+  const number = 100000 + Math.floor(Math.random() * 900000)
+  form.elements.name.defaultValue = String(number)
+  openForm(form)
+  updatePasswordField()
+  form.elements.name.select()
+}
 nickname.onclick = () => {
   openForm(profile)
   profile.elements.name.value = state.name || state.playerNumber
