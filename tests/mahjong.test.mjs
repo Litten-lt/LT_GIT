@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {advance, BOT_DELAY, canWin, legalMoves, newMatch, play, tableView, tileSet, RED} from '../src/mahjong.js'
+import {advance, BOT_DELAY, canWin, distanceToWin, robotMove, legalMoves, newMatch, play, tableView, tileSet, RED} from '../src/mahjong.js'
 
 const humans = Array.from({length: 4}, (_, id) => ({id, name: String(id), bot: false}))
 const move = (match, seat, type, tile) => assert.ok(play(match, seat, {type, tile}))
@@ -137,4 +137,15 @@ test('robot actions are paced, visible in order and stop for a human claim', () 
   assert.deepEqual(match.events[1],{seq:2,type:'pong',seat:0,tile:5})
   assert.equal(advance(match,match.botAt+BOT_DELAY,true),false)
   assert.equal(match.turn,0)
+})
+
+test('robot recognizes wildcard and seven-pairs waits and passes a damaging pong', () => {
+  const hand = [0,0,3,3,6,6,9,9,12,12,18,18,RED]
+  assert.equal(distanceToWin(hand, 0), 0)
+  assert.equal(distanceToWin([...hand, 24], 0), -1)
+  assert.equal(distanceToWin([0,1,RED,3,4,5,9,10,11,18,18,RED,24], 0), 0)
+  const pass = {type:'pass', tile:0}
+  assert.deepEqual(robotMove({
+    seat:0, hand, melds:[[],[],[],[]], discards:[[],[0],[],[]]
+  }, [{type:'pong', tile:0}, pass]), pass)
 })

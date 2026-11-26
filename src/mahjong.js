@@ -223,17 +223,135 @@ export function play(match, seat, move) {
   return true
 }
 
-function robotMove(hand, moves) {
-  for (const type of ['win', 'closedKong', 'addedKong', 'openKong', 'pong']) {
-    const move = moves.find(option => option.type === type)
-    if (move) return move
+const suitProfiles = new Map([['000000000', [[0, 0, 0]]]])
+
+function suitShapes(counts) {
+  const key = counts.join('')
+  if (suitProfiles.has(key)) return suitProfiles.get(key)
+  const first = counts.findIndex(Boolean)
+  const shapes = new Map()
+  function use(tiles, groups = 0, partials = 0, pair = 0) {
+    for (const tile of tiles) counts[tile]--
+    for (const [g, t, p] of suitShapes(counts)) {
+      if (g + groups > 4 || t + partials > 4 || p + pair > 1) continue
+      const shape = [g + groups, t + partials, p + pair]
+      shapes.set(shape[0] * 10 + shape[1] * 2 + shape[2], shape)
+    }
+    for (const tile of tiles) counts[tile]++
   }
-  const score = tile => {
-    if (tile === RED) return 100
-    const suit = Math.floor(tile / 9)
-    return amount(hand, tile) * 4 + hand.filter(other => Math.floor(other / 9) === suit && Math.abs(other - tile) === 1).length
+  use([first])
+  if (counts[first] >= 2) {
+    use([first, first], 0, 0, 1)
+    use([first, first], 0, 1)
   }
-  return moves.find(move => move.type === 'pass') ?? moves.reduce((best, move) => score(move.tile) < score(best.tile) ? move : best)
+  if (counts[first] >= 3) use([first, first, first], 1)
+  if (counts[first + 1]) use([first, first + 1], 0, 1)
+  if (counts[first + 2]) {
+    use([first, first + 2], 0, 1)
+    if (counts[first + 1]) use([first, first + 1, first + 2], 1)
+  }
+  const result = [...shapes.values()].filter(([g, t, p]) =>
+    t === 4 || !shapes.has(g * 10 + (t + 1) * 2 + p))
+  if (suitProfiles.size < 30_000) suitProfiles.set(key, result)
+  return result
+}
+
+// A quad can count as two pairs under the local seven-pairs rule.
+export function distanceToWin(hand, melds) {
+  const counts = Array(RED).fill(0)
+  let wild = 0
+  for (const tile of hand) {
+    if (tile === RED) wild++
+    else counts[tile]++
+  }
+  const pairs = counts.reduce((total, count) => total + Math.floor(count / 2), 0)
+  let best = melds ? 8 : 6 - pairs - wild
+  const [first, second, third] = [0, 9, 18].map(start => suitShapes(counts.slice(start, start + 9)))
+  for (const [a, b, c] of first) {
+    for (const [d, e, f] of second) {
+      for (const [g, h, i] of third) {
+        const groups = melds + a + d + g
+        if (groups > 4 || c + f + i > 1) continue
+        const partials = Math.min(4 - groups, b + e + h)
+        best = Math.min(best, 8 - groups * 2 - partials - c - f - i - wild)
+      }
+    }
+  }
+  // The scoring engine is the final authority on completed hands.
+  return best < 0 ? (canWin(hand, melds) ? -1 : 0) : best
+}
+
+export function robotMove({hand, melds, discards, seat}, moves) {
+  const win = moves.find(move => move.type === 'win')
+  if (win || moves.length === 1) return win ?? moves[0]
+
+  const remaining = Array(RED + 1).fill(4)
+  for (const tile of hand) remaining[tile]--
+  for (const river of discards) for (const tile of river) remaining[tile]--
+  for (const [index, groups] of melds.entries()) {
+    for (const {type, tile} of groups) {
+      if (type === 'closedKong' && index !== seat) continue
+      remaining[tile] -= type === 'pong' ? 3 : 4
+    }
+  }
+
+  const memo = new Map()
+  const distance = (tiles, groups) => {
+    const key = groups + ':' + tiles.slice().sort((a, b) => a - b).join(',')
+    if (!memo.has(key)) memo.set(key, distanceToWin(tiles, groups))
+    return memo.get(key)
+  }
+  const rate = (tiles, groups) => {
+    const steps = distance(tiles, groups)
+    let draws = 0
+    for (let tile = 0; tile <= RED; tile++) {
+      if (remaining[tile] > 0 && distance([...tiles, tile], groups) < steps) draws += remaining[tile]
+    }
+    return {steps, draws}
+  }
+  const compare = (a, b) => b.steps - a.steps || a.draws - b.draws
+  const without = (tiles, tile, count = 1) => {
+    const next = tiles.slice()
+    take(next, tile, count)
+    return next
+  }
+  const groups = melds[seat].length
+  const pass = moves.find(move => move.type === 'pass')
+  let bestMove = pass
+  let best = pass ? rate(hand, groups) : null
+  for (const move of moves) {
+    const {type, tile} = move
+    if (type !== 'discard') continue
+    const value = rate(without(hand, tile), groups)
+    if (!best || compare(value, best) > 0 || (compare(value, best) === 0 && bestMove.tile === RED)) {
+      bestMove = move
+      best = value
+    }
+  }
+  for (const move of moves) {
+    const {type, tile} = move
+    if (type === 'pong') {
+      const next = without(hand, tile, 2)
+      for (const discard of new Set(next)) {
+        const value = rate(without(next, discard), groups + 1)
+        if (compare(value, best) > 0) {
+          best = value
+          bestMove = move
+        }
+      }
+    }
+    if (type === 'closedKong' || type === 'addedKong' || type === 'openKong') {
+      const count = type === 'closedKong' ? 4 : type === 'openKong' ? 3 : 1
+      // The replacement draw has the same unknown distribution as a regular draw.
+      // Break an equal-efficiency tie in favor of the kong's immediate points.
+      const value = rate(without(hand, tile, count), groups + Number(type !== 'addedKong'))
+      if (compare(value, best) >= 0) {
+        best = value
+        bestMove = move
+      }
+    }
+  }
+  return bestMove
 }
 
 export function advance(match, time = now(), paced = false) {
@@ -246,7 +364,7 @@ export function advance(match, time = now(), paced = false) {
       const bot = match.players[seat].bot
       if (bot && paced && time < (match.botAt ?? 0)) continue
       if (!bot && time < match.deadline) continue
-      const move = bot ? robotMove(match.hands[seat], moves) :
+      const move = bot ? robotMove({hand: match.hands[seat], melds: match.melds, discards: match.discards, seat}, moves) :
         moves.find(option => option.type === 'pass') ??
         moves.find(option => option.type === 'discard' && option.tile === match.drawn) ??
         moves.find(option => option.type === 'discard')
