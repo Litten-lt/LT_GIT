@@ -26,9 +26,7 @@ let connectionError = false
 let lastEvent = 0
 let announcements = Promise.resolve()
 let audioContext
-let audioEnabled = false
 let audioChain = Promise.resolve()
-let activeVoice
 const clips = new Map()
 
 function node(tag, className, text) {
@@ -155,20 +153,6 @@ function drawSeat(relative) {
   return section
 }
 
-function renderHistory() {
-  const seats = [2, 3, 1, 0].map(drawSeat)
-  for (const seat of seats) {
-    seat.querySelectorAll('.backs, .hand-count, .melds').forEach(element => element.remove())
-  }
-  get('history-seats').replaceChildren(...seats)
-}
-
-get('history-open').onclick = () => {
-  if (!state) return
-  renderHistory()
-  get('history').showModal()
-}
-
 function renderHand(discards, animateDraw) {
   const rack = get('hand')
   const old = new Map([...rack.children].map(element => [element.dataset.key, element.getBoundingClientRect()]))
@@ -218,10 +202,8 @@ function renderHand(discards, animateDraw) {
 }
 
 function render(animateDraw) {
-  get('remaining').textContent = '第 ' + state.round + ' 局 · 剩余 ' + state.remaining
   const felt = get('felt')
   felt.replaceChildren(...[2, 3, 1, 0].map(drawSeat), get('latest').parentElement)
-  if (get('history').open) renderHistory()
   const over = state.phase === 'ended'
   updateCountdown()
   const discards = state.moves.filter(move => move.type === 'discard')
@@ -297,7 +279,7 @@ function showEvent(event) {
 }
 
 function queueVoice(event) {
-  if (!audioEnabled) return
+  if (audioContext?.state !== 'running') return
   const key = event.type === 'discard' || event.type === 'fly' ? event.tile : event.type.endsWith('Kong') ? 'kong' : event.type
   if (!clips.has(key)) clips.set(key, fetch('./mahjong-audio/' + key + '.wav').then(async response => {
     if (!response.ok) throw new Error('语音文件读取失败')
@@ -309,13 +291,12 @@ function queueVoice(event) {
   const clip = clips.get(key)
   audioChain = audioChain.then(async () => {
     const buffer = await clip
-    if (!buffer || !audioEnabled) return
+    if (!buffer || audioContext.state !== 'running') return
     await new Promise(resolve => {
       const voice = audioContext.createBufferSource()
       voice.buffer = buffer
       voice.connect(audioContext.destination)
-      voice.onended = () => { activeVoice = null; resolve() }
-      activeVoice = voice
+      voice.onended = () => resolve()
       voice.start()
     })
   }).catch(() => {})
@@ -332,37 +313,20 @@ function announce(events, matchId) {
   })
 }
 
-get('sound').onclick = async () => {
+async function resumeVoice() {
+  const Audio = window.AudioContext ?? window.webkitAudioContext
+  if (!Audio) return
   try {
-    audioContext ??= new (window.AudioContext ?? window.webkitAudioContext)()
-    audioEnabled = !audioEnabled
-    if (audioEnabled) await audioContext.resume()
-    else activeVoice?.stop()
-    get('sound').textContent = audioEnabled ? '关闭语音' : '开启语音'
-    get('sound').setAttribute('aria-pressed', String(audioEnabled))
+    audioContext ??= new Audio()
+    if (audioContext.state !== 'running') await audioContext.resume()
   } catch {
-    audioEnabled = false
-    get('message').textContent = '当前浏览器无法播放报牌语音。'
+    // Browsers may require a user gesture before resuming audio.
   }
 }
 
-get('fullscreen').onclick = async () => {
-  const hint = get('fullscreen-hint')
-  hint.hidden = true
-  try {
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-      await document.documentElement.requestFullscreen()
-    }
-  } catch {}
-  if (document.fullscreenElement) {
-    try { await screen.orientation?.lock?.('landscape') } catch {}
-  }
-  const portrait = matchMedia('(orientation: portrait)').matches
-  if (!document.fullscreenElement || portrait) {
-    hint.textContent = document.fullscreenElement ? '请横放手机。' :
-      '若浏览器仍显示工具栏，请添加到主屏幕，再从桌面图标打开。'
-    hint.hidden = false
-  }
+void resumeVoice()
+for (const event of ['pointerup', 'click', 'keydown']) {
+  document.addEventListener(event, resumeVoice, {capture: true})
 }
 
 function fitViewport() {
