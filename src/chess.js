@@ -1,9 +1,12 @@
 import {randomBytes,randomUUID,scrypt,timingSafeEqual} from 'node:crypto'
 import {promisify} from 'node:util'
 import {digest} from './auth.js'
-import {advance, newMatch, play, tableView} from './mahjong.js'
+import * as mahjong from './mahjong.js'
+import * as hongjian from './hongjian.js'
 
 const rules = ['红中麻将', '长沙麻将']
+const hongjianRule = rules.length
+const engineFor = rule => rule === hongjianRule ? hongjian : mahjong
 const capacity = 4
 const cookieName = 'zhimu_chess'
 const derive = promisify(scrypt)
@@ -139,8 +142,10 @@ export function registerChess(router, db, {basePath, secureCookies}) {
       if (current) fail(409, '请先离开当前房间')
       if (action === 'create') {
         const name = typeof req.body?.name === 'string' ? req.body.name.trim() : ''
-        const rule = rules.indexOf(req.body?.rule)
-        if (!name || name.length > 30 || rule < 0 || req.body?.game !== 'mahjong') fail(400, '请填写房名并选择麻将规则')
+        const {game, rule: selectedRule} = req.body ?? {}
+        const rule = game === 'mahjong' ? rules.indexOf(selectedRule) :
+          game === 'hongjian' && selectedRule === '会同红尖' ? hongjianRule : -1
+        if (!name || name.length > 30 || rule < 0) fail(400, '请填写房名并选择玩法')
         if (db.prepare('SELECT count(*) AS count FROM chess_rooms').get().count >= 100) fail(429, '大厅房间已达上限，请稍后再试')
         const roomId = randomUUID()
         db.prepare('INSERT INTO chess_rooms VALUES (?, ?, ?)').run(roomId, name, rule)
@@ -176,7 +181,9 @@ export function registerChess(router, db, {basePath, secureCookies}) {
         SELECT r.id, r.name, r.rule, count(*) AS players
         FROM chess_rooms r JOIN chess_seats s ON s.room_id=r.id
         GROUP BY r.id ORDER BY r.rowid DESC
-      `).all().map(room => ({...room, game: '麻将', rule: rules[room.rule], capacity}))
+      `).all().map(room => ({...room, game: room.rule === hongjianRule ? '红尖' : '麻将',
+        ruleId: room.rule, rule: room.rule === hongjianRule ? '会同红尖' : rules[room.rule],
+        capacity}))
       const roomId = seatOf(playerId)
       const name = playerId ? db.prepare('SELECT name FROM chess_names WHERE player_id=?').get(playerId)?.name ?? '' : ''
       const owner = roomId ? ownerOf.get(roomId).player_id : null
@@ -184,7 +191,8 @@ export function registerChess(router, db, {basePath, secureCookies}) {
       for (const room of rooms) {
         const game = matchRecord.get(room.id)
         if (game?.active) room.playing = true
-        if (game && room.id === roomId && tableView(JSON.parse(game.state), playerId)) room.hasMatch = true
+        if (game && room.id === roomId && engineFor(room.ruleId).tableView(JSON.parse(game.state), playerId)) room.hasMatch = true
+        delete room.ruleId
         const ownerId = ownerOf.get(room.id).player_id
         room.members = roomMembers.all(room.id).map(member => ({
           name: member.name ?? member.player_id.slice(0, 8),
@@ -217,9 +225,11 @@ export function registerChess(router, db, {basePath, secureCookies}) {
       const playerId = findPlayer(req)
       gameRoom(roomId, playerId)
       const record = matchRecord.get(roomId)
+      const rule = db.prepare('SELECT rule FROM chess_rooms WHERE id=?').get(roomId).rule
+      const {advance, play, tableView} = engineFor(rule)
       if (action === 'bot' || action === 'start') {
         if (ownerOf.get(roomId)?.player_id !== playerId) fail(403, '只有房主可以操作')
-        if (db.prepare('SELECT rule FROM chess_rooms WHERE id=?').get(roomId).rule !== 0) fail(409, '该玩法暂未开放')
+        if (rule !== 0 && rule !== hongjianRule) fail(409, '该玩法暂未开放')
         const members = roomMembers.all(roomId)
         if (action === 'start' && record?.active) return tableView(JSON.parse(record.state), playerId)
         if (record?.active) fail(409, '对局已经开始')
@@ -234,9 +244,12 @@ export function registerChess(router, db, {basePath, secureCookies}) {
           return {ok: true}
         }
         if (members.length !== capacity) fail(409, '需要四人入座才可开局')
-        const match = newMatch(members.map(member => ({
+        const players = members.map(member => ({
           id: member.player_id, name: member.name ?? member.player_id.slice(0, 8), bot: isBot(member.player_id)
-        })), undefined, undefined, record ? JSON.parse(record.state) : undefined)
+        }))
+        const previous = record ? JSON.parse(record.state) : undefined
+        const match = rule === hongjianRule ? hongjian.newMatch(players, previous) :
+          mahjong.newMatch(players, undefined, undefined, previous)
         save(roomId, match)
         return tableView(match, playerId)
       }

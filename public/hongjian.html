@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#153a30">
+  <title>会同红尖 · 知木棋牌室</title>
+  <link rel="stylesheet" href="./hongjian.css?v=table-5">
+</head>
+<body>
+  <main class="layout">
+    <section class="table" aria-label="牌桌">
+      <div class="table-bar">
+        <a href="./chess.html" aria-label="返回棋牌室">←</a>
+        <span id="status" role="status">正在加载牌桌…</span>
+      </div>
+      <div id="opponents" class="opponents"></div>
+      <section class="trick" aria-label="当前出牌">
+        <div class="trick-display">
+          <div id="trick-cards" class="trick-plays" tabindex="0" aria-label="最近一手出牌" hidden></div>
+          <strong id="trick-points"></strong>
+        </div>
+        <section id="result" aria-label="本局结算" hidden></section>
+      </section>
+      <section class="mine" aria-label="我的手牌">
+        <div id="self"></div>
+        <div id="hand" class="cards"></div>
+        <div id="selection"></div>
+        <div class="actions">
+          <button id="hint" disabled>提示</button>
+          <button id="pass" disabled>过</button>
+          <button id="play" class="primary" disabled>出牌</button>
+          <button id="next" class="primary" hidden>下一局</button>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="./hongjian.js?v=table-6"></script>
+</body>
+</html>

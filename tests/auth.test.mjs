@@ -228,3 +228,31 @@ test('open chess rooms accept passwordless entry while protected rooms prompt fo
   assert.equal((await request(path, 'POST', {password: 'wrong'})).status, 403)
   assert.equal((await request(path, 'POST', {password: '123456'})).status, 200)
 })
+
+test('Hongjian rooms expose the poker table and keep opponents’ hands private', async t => {
+  const {request} = await setup(t, {basePath: '/zhimu'})
+  assert.equal((await request('/hongjian.html')).status, 200)
+  const created = await request('/api/chess/rooms', 'POST', {name: '红尖练习桌', game: 'hongjian', rule: '会同红尖'})
+  assert.equal(created.status, 201)
+  const owner = created.headers.get('set-cookie').split(';')[0]
+  const {roomId} = await created.json()
+  const base = '/api/chess/rooms/' + roomId
+  const guest = await request(base + '/join', 'POST', {})
+  assert.equal(guest.status, 200)
+  const guestCookie = guest.headers.get('set-cookie').split(';')[0]
+  for (let count = 0; count < 2; count++) {
+    assert.equal((await request(base + '/bots', 'POST', {}, owner)).status, 200)
+  }
+  const started = await request(base + '/start', 'POST', {}, owner)
+  assert.equal(started.status, 200)
+  const first = await started.json()
+  const other = await (await request(base + '/match', 'GET', null, guestCookie)).json()
+  assert.equal(first.id, other.id)
+  assert.equal(other.hand.length, 13)
+  assert.equal(first.hand.length, 13)
+  assert.ok(other.hand.every(card => !first.hand.includes(card)))
+  assert.ok(other.players.every(player => !('hand' in player)))
+  const lobby = await (await request('/api/chess', 'GET', null, owner)).json()
+  assert.equal(lobby.rooms[0].game, '红尖')
+  assert.equal(lobby.rooms[0].hasMatch, true)
+})

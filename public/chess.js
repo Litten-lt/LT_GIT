@@ -44,10 +44,16 @@ function openForm(form, title) {
   form.closest('dialog').showModal()
 }
 
+function updateRules() {
+  const game = form.elements.game.value
+  const rules = game === 'hongjian' ? ['会同红尖'] : state.rules
+  form.elements.rule.replaceChildren(...rules.map(rule => new Option(rule, rule)))
+}
+
+form.elements.game.onchange = updateRules
+
 function render() {
-  if (!form.elements.rule.options.length) {
-    for (const rule of state.rules) form.elements.rule.add(new Option(rule, rule))
-  }
+  if (!form.elements.rule.options.length) updateRules()
   newRoom.disabled = Boolean(state.roomId)
   nickname.hidden = !state.playerNumber
   nickname.textContent = state.name || state.playerNumber
@@ -73,9 +79,9 @@ function render() {
     const actions = document.createElement('div')
     actions.className = 'chess-actions'
     if (ownRoom) {
-      const table = './mahjong.html?' + new URLSearchParams({room: room.id})
+      const table = (room.game === '红尖' ? './hongjian.html?' : './mahjong.html?') + new URLSearchParams({room: room.id})
       if (room.hasMatch) actions.append(button(room.playing ? '回到牌桌' : '查看上局', () => { location.href = table }))
-      if (state.isOwner && room.rule === '红中麻将' && !room.playing) {
+      if (state.isOwner && (room.rule === '红中麻将' || room.game === '红尖') && !room.playing) {
         if (!full) actions.append(button('添加机器人', () => act('/rooms/' + room.id + '/bots', {}, '已添加机器人'), false, 'outline-button'))
         actions.append(button('开始游戏', () => act('/rooms/' + room.id + '/start', {}, '已开局', null, table), !full))
       }
@@ -158,6 +164,7 @@ newRoom.onclick = () => {
   form.elements.name.defaultValue = String(number)
   openForm(form)
   updatePasswordField()
+  updateRules()
   form.elements.name.select()
 }
 nickname.onclick = () => {

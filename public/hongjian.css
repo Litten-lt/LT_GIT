@@ -1,0 +1,173 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, "Microsoft YaHei", sans-serif;
+  color: #193b31;
+  background: #153a30;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+a { color: inherit; }
+.table {
+  background: radial-gradient(ellipse at center, #28624e, #153a30);
+  color: #fff8e6;
+  min-height: 100dvh;
+  padding: max(.4rem, env(safe-area-inset-top)) max(.5rem, env(safe-area-inset-right))
+    max(.4rem, env(safe-area-inset-bottom)) max(.5rem, env(safe-area-inset-left));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: .4rem;
+}
+.opponents { display: grid; align-items: start; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+.seat { padding: .55rem; border: 2px solid transparent; border-radius: .65rem; background: #112f28; min-width: 0; }
+.seat { display: flex; align-items: center; gap: .45rem; }
+.seat-details { min-width: 0; }
+.seat strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat-avatar { display: grid; justify-items: center; gap: .15rem; flex: none; }
+.avatar-initial {
+  display: grid;
+  place-items: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  font-size: .7rem;
+  border-radius: 50%;
+  background: #d9dfbd;
+  color: #17382e;
+  font-weight: 700;
+}
+.red-ace { color: #a42329; background: #fff0df; border-radius: .25rem; padding: .05rem .22rem; font-size: .68rem; font-weight: 750; white-space: nowrap; }
+.seat small { color: #e4d9ba; }
+.seat.active { border-color: #e8bd62; }
+.trick, .mine { display: grid; justify-items: center; align-content: center; gap: .65rem; min-width: 0; }
+.mine > * { max-width: 100%; }
+.cards { display: flex; justify-content: center; }
+.card {
+  display: block;
+  width: clamp(2rem, 8vw, 4.15rem);
+  height: clamp(3.2rem, 13vw, 5.8rem);
+  flex: none;
+  text-align: left;
+  padding: .25rem;
+  border-radius: .4rem;
+  border: 1px solid #c9c1ae;
+  background: #fffbef;
+  color: #172820;
+  box-shadow: 0 2px 4px #0004;
+  font: 700 clamp(.82rem, 3vw, 1.3rem)/1.05 system-ui, sans-serif;
+}
+.card span { display: block; }
+.card.red { color: #aa2929; }
+#hand {
+  --card-width: clamp(2.45rem, 9vw, 4.15rem);
+  --step: clamp(1.25rem, 6vw, 4.35rem);
+  padding-top: .7rem;
+}
+#hand .card { width: var(--card-width); position: relative; cursor: pointer; }
+#hand .card + .card { margin-left: calc(var(--step) - var(--card-width)); }
+#hand .card[aria-pressed="true"] { transform: translateY(-.55rem); border: 2px solid #e3aa3b; }
+#hand .card:focus-visible { outline: 2px solid #e3aa3b; outline-offset: 2px; z-index: 1; }
+.trick-display {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: .35rem;
+  width: 100%;
+  min-width: 0;
+}
+.trick-plays { min-width: 0; max-width: 100%; overflow-x: auto; }
+.trick-play {
+  width: max-content;
+  border: 1px solid #ecc16a;
+  border-radius: .45rem;
+  padding: .25rem;
+}
+.trick-play small { display: block; margin-bottom: .2rem; white-space: nowrap; }
+.trick-play .cards { justify-content: start; }
+.trick-play .card { width: 1.85rem; height: 2.6rem; font-size: .85rem; }
+#trick-points { flex: none; white-space: nowrap; font-size: .8rem; }
+#selection { min-height: 1.25em; text-align: center; }
+.actions { display: flex; gap: .5rem; }
+.actions button {
+  min-height: 44px;
+  min-width: 64px;
+  border: 1px solid #ebe0c6;
+  border-radius: .45rem;
+  background: #f7ecd5;
+  color: #193b31;
+  font: inherit;
+  cursor: pointer;
+}
+.actions button.primary { background: #ecc16a; border-color: #ecc16a; font-weight: 700; }
+.actions button:disabled { opacity: .48; cursor: default; }
+.table-bar { display: flex; align-items: center; gap: .45rem; font-size: .82rem; }
+.table-bar a { text-decoration: none; display: grid; place-items: center; width: 2rem; min-height: 32px; }
+#status { flex: 1; text-align: center; padding-right: 2rem; }
+#result { width: min(100%, 27rem); padding: .45rem .65rem; border-radius: .6rem; background: #112f28; }
+#result p, #result h2 { margin: .15rem 0; }
+#result h2 { font-size: 1.05rem; }
+#result ul { margin: .3rem 0 0; padding-left: 1.15rem; }
+#selection:empty { display: none; }
+
+@media (min-width: 1000px) and (min-height: 561px) {
+  .layout { width: min(1180px, 100%); margin-inline: auto; }
+  .table { position: relative; grid-template-rows: auto 1fr auto; }
+  .opponents { display: contents; }
+  .opponents .seat { position: absolute; max-width: 21%; }
+  .opponents .seat:nth-child(1) { left: .8rem; top: 30%; }
+  .opponents .seat:nth-child(2) { left: 50%; transform: translateX(-50%); top: 3rem; }
+  .opponents .seat:nth-child(3) { right: .8rem; top: 30%; }
+  .trick { margin: 4rem 22% 0; }
+  #hand { --step: 3.9rem; }
+}
+
+@media (max-width: 600px) {
+  .opponents { gap: .25rem; }
+  .seat { padding: .28rem; gap: .25rem; font-size: .77rem; }
+  .seat small { display: block; line-height: 1.25; }
+  .avatar-initial { width: .95rem; height: .95rem; font-size: .65rem; }
+  .red-ace { font-size: .55rem; padding-inline: .1rem; }
+  .trick, .mine { gap: .35rem; }
+  #hand { --step: clamp(1rem, 6vw, 2.1rem); }
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .table { position: relative; }
+  .table {
+    gap: .2rem .35rem;
+    grid-template-columns: clamp(4.4rem, 16vw, 8rem) minmax(0, 1fr) clamp(4.4rem, 16vw, 8rem);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "bar bar bar"
+      ". top ."
+      "left trick right"
+      "mine mine mine";
+  }
+  .table-bar { grid-area: bar; }
+  .opponents { display: contents; }
+  .opponents .seat { align-self: center; justify-self: center; max-width: 100%; }
+  .opponents .seat:nth-child(1) { grid-area: left; }
+  .opponents .seat:nth-child(2) { grid-area: top; }
+  .opponents .seat:nth-child(3) { grid-area: right; }
+  .trick { grid-area: trick; }
+  .mine { grid-area: mine; }
+  .table-bar a { min-height: 26px; }
+  .seat { padding: .18rem .35rem; font-size: .78rem; }
+  .trick, .mine { gap: .2rem; }
+  .trick { font-size: .78rem; }
+  .trick-play { padding: .2rem; }
+  .trick-play .card { height: 2.1rem; }
+  #self {
+    position: absolute;
+    inset-inline-start: max(.5rem, env(safe-area-inset-left));
+    inset-block-end: max(.4rem, env(safe-area-inset-bottom));
+    width: min(16vw, 7rem);
+  }
+  #self .seat { font-size: .66rem; padding: .15rem .25rem; gap: .2rem; }
+  #self .avatar-initial { width: .8rem; height: .8rem; font-size: .57rem; }
+  #self .red-ace { font-size: .52rem; padding-inline: .14rem; }
+  #self .seat small { overflow-wrap: anywhere; }
+  .mine { padding-inline: min(16vw, 7rem); }
+  #hand { --card-width: 3.1rem; --step: clamp(1.2rem, 4vw, 3.05rem); padding-top: .45rem; }
+  #hand .card { height: clamp(2.8rem, 15dvh, 4.1rem); font-size: 1rem; }
+  #selection { font-size: .76rem; }
+}
